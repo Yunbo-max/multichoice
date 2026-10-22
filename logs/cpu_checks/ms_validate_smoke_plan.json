@@ -1,0 +1,154 @@
+{
+  "mode": "validate-only",
+  "ok": true,
+  "model": "models/Qwen3.5-4B",
+  "modules": "innerjev/configs/4B/modules.json",
+  "target_mode": "gold",
+  "max_input_tokens": 8192,
+  "max_batch_tokens": 8192,
+  "world_size": 8,
+  "global_batch": 64,
+  "errors": [],
+  "warnings": [],
+  "labels": {
+    "count": 255,
+    "first": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H"
+    ],
+    "last": [
+      "JR",
+      "JS",
+      "JT"
+    ],
+    "token_ids_first": [
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ]
+  },
+  "train": {
+    "n": 512,
+    "by_source": {
+      "cmb_exam_multi": 512
+    },
+    "by_lang": {
+      "zh": 512
+    },
+    "option_counts": {
+      "5": 504,
+      "6": 8
+    },
+    "positive_counts": {
+      "1": 1,
+      "2": 112,
+      "3": 169,
+      "4": 154,
+      "5": 75,
+      "6": 1
+    },
+    "target_sum_min": 1,
+    "target_sum_max": 6,
+    "prompts": {
+      "n": 512,
+      "mean": 102.359375,
+      "p50": 96,
+      "p90": 129,
+      "p99": 198,
+      "max": 270,
+      "total": 52408,
+      "over_max_input": 0
+    },
+    "micro_plan": {
+      "batches": 8,
+      "micro_counts": {
+        "8": 8
+      },
+      "problems": [],
+      "problem_count": 0
+    }
+  },
+  "train_plan": {
+    "planned_steps": 8,
+    "warmup_steps": 1,
+    "eval_every": 1,
+    "stop_step": 2
+  },
+  "dev": {
+    "n": 128,
+    "by_source": {
+      "cmb_exam_multi": 128
+    },
+    "by_lang": {
+      "zh": 128
+    },
+    "option_counts": {
+      "5": 127,
+      "6": 1
+    },
+    "positive_counts": {
+      "2": 27,
+      "3": 44,
+      "4": 41,
+      "5": 16
+    },
+    "target_sum_min": 2,
+    "target_sum_max": 5,
+    "prompts": {
+      "n": 128,
+      "mean": 97.75,
+      "p50": 94,
+      "p90": 116,
+      "p99": 158,
+      "max": 165,
+      "total": 12512,
+      "over_max_input": 0
+    },
+    "micro_plan": {
+      "batches": 2,
+      "micro_counts": {
+        "8": 2
+      },
+      "problems": [],
+      "problem_count": 0
+    }
+  },
+  "targets": {
+    "mode": "gold",
+    "source": "gold",
+    "from_file": 0,
+    "missing": 0
+  },
+  "modules_check": {
+    "ok": true,
+    "model_type": "qwen3_5",
+    "architecture": "Qwen3_5ForConditionalGeneration",
+    "modules": 176,
+    "missing": [],
+    "nonlinear": [],
+    "no_weight": [],
+    "trainable_parameters": 3313500160,
+    "expected_trainable_parameters": 3313500160,
+    "trainable_matches": true,
+    "output_head_shape": [
+      248320,
+      2560
+    ],
+    "input_embedding_shape": [
+      248320,
+      2560
+    ],
+    "ties_embeddings": true
+  }
+}

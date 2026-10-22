@@ -1,0 +1,78 @@
+INFO 10-21 15:46:40 [utils.py:233] non-default args: {'dtype': 'bfloat16', 'max_model_len': 8192, 'max_num_seqs': 128, 'disable_log_stats': True, 'model': '/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B'}
+INFO 10-21 15:47:07 [model.py:549] Resolved architecture: Qwen3_5ForConditionalGeneration
+INFO 10-21 15:47:07 [model.py:1678] Using max model len 8192
+INFO 10-21 15:47:07 [scheduler.py:238] Chunked prefill is enabled with max_num_batched_tokens=16384.
+[transformers] `Qwen2VLImageProcessorFast` is deprecated. The `Fast` suffix for image processors has been removed; use `Qwen2VLImageProcessor` instead.
+INFO 10-21 15:47:11 [config.py:281] Setting attention block size to 528 tokens to ensure that attention page size is >= mamba page size.
+INFO 10-21 15:47:11 [config.py:312] Padding mamba page size by 0.76% to ensure that mamba page size and attention page size are exactly equal.
+INFO 10-21 15:47:11 [vllm.py:790] Asynchronous scheduling is enabled.
+[transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+WARNING 10-21 15:47:21 [system_utils.py:152] We must use the `spawn` multiprocessing start method. Overriding VLLM_WORKER_MULTIPROC_METHOD to 'spawn'. See https://docs.vllm.ai/en/latest/usage/troubleshooting.html#python-multiprocessing for more information. Reasons: CUDA is initialized
+(EngineCore pid=7073) INFO 10-21 15:47:29 [core.py:105] Initializing a V1 LLM engine (v0.19.1) with config: model='/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B', speculative_config=None, tokenizer='/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=8192, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B, enable_prefix_caching=False, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'splitting_ops': ['vllm::unified_attention', 'vllm::unified_attention_with_output', 'vllm::unified_mla_attention', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::gdn_attention_core', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::kda_attention', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_images_per_batch': 0, 'compile_sizes': [], 'compile_ranges_endpoints': [16384], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 256, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}
+(EngineCore pid=7073) [transformers] `Qwen2VLImageProcessorFast` is deprecated. The `Fast` suffix for image processors has been removed; use `Qwen2VLImageProcessor` instead.
+(EngineCore pid=7073) INFO 10-21 15:47:31 [parallel_state.py:1400] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://10.246.161.155:40439 backend=nccl
+(EngineCore pid=7073) INFO 10-21 15:47:32 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=7073) [transformers] The `use_fast` parameter is deprecated and will be removed in a future version. Use `backend="torchvision"` instead of `use_fast=True`, or `backend="pil"` instead of `use_fast=False`.
+(EngineCore pid=7073) INFO 10-21 15:47:39 [gpu_model_runner.py:4735] Starting to load model /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B...
+(EngineCore pid=7073) INFO 10-21 15:47:40 [cuda.py:390] Using backend AttentionBackendEnum.FLASH_ATTN for vit attention
+(EngineCore pid=7073) INFO 10-21 15:47:40 [mm_encoder_attention.py:230] Using AttentionBackendEnum.FLASH_ATTN for MMEncoderAttention.
+(EngineCore pid=7073) INFO 10-21 15:47:40 [gdn_linear_attn.py:139] Using FlashInfer GDN prefill kernel
+(EngineCore pid=7073) INFO 10-21 15:47:40 [gdn_linear_attn.py:140] FlashInfer GDN prefill kernel is JIT-compiled; first run may take a while to compile. Set `--gdn-prefill-backend triton` to avoid JIT compile time.
+(EngineCore pid=7073) INFO 10-21 15:47:48 [cuda.py:334] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=7073) INFO 10-21 15:47:48 [flash_attn.py:596] Using FlashAttention version 3
+(EngineCore pid=7073) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(EngineCore pid=7073) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(EngineCore pid=7073) Loading safetensors checkpoint shards:   0% Completed | 0/2 [00:00<?, ?it/s]
+(EngineCore pid=7073) Loading safetensors checkpoint shards:  50% Completed | 1/2 [00:19<00:19, 19.27s/it]
+(EngineCore pid=7073) Loading safetensors checkpoint shards: 100% Completed | 2/2 [00:34<00:00, 16.84s/it]
+(EngineCore pid=7073) Loading safetensors checkpoint shards: 100% Completed | 2/2 [00:34<00:00, 17.20s/it]
+(EngineCore pid=7073) 
+(EngineCore pid=7073) INFO 10-21 15:48:23 [default_loader.py:384] Loading weights took 34.70 seconds
+(EngineCore pid=7073) INFO 10-21 15:48:24 [gpu_model_runner.py:4820] Model loading took 8.58 GiB memory and 43.380760 seconds
+(EngineCore pid=7073) INFO 10-21 15:48:24 [gpu_model_runner.py:5753] Encoder cache will be initialized with a budget of 16384 tokens, and profiled with 1 image items of the maximum feature size.
+(EngineCore pid=7073) INFO 10-21 15:48:51 [backends.py:1051] Using cache directory: /root/.cache/vllm/torch_compile_cache/2b3b92b0e6/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=7073) INFO 10-21 15:48:51 [backends.py:1111] Dynamo bytecode transform time: 23.77 s
+(EngineCore pid=7073) INFO 10-21 15:48:54 [backends.py:372] Cache the graph of compile range (1, 16384) for later use
+(EngineCore pid=7073) INFO 10-21 15:49:19 [backends.py:390] Compiling a graph for compile range (1, 16384) takes 27.51 s
+(EngineCore pid=7073) INFO 10-21 15:49:20 [decorators.py:655] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/452d909c4831c14066f6a2497445eca5410978d491a6a055f497a75e65f8b9d2/rank_0_0/model
+(EngineCore pid=7073) INFO 10-21 15:49:20 [monitor.py:48] torch.compile took 53.07 s in total
+(EngineCore pid=7073) INFO 10-21 15:51:49 [monitor.py:76] Initial profiling/warmup run took 148.89 s
+(EngineCore pid=7073) INFO 10-21 15:51:57 [kv_cache_utils.py:829] Overriding num_gpu_blocks=0 with num_gpu_blocks_override=256
+(EngineCore pid=7073) INFO 10-21 15:51:57 [gpu_model_runner.py:5876] Profiling CUDA graph memory: PIECEWISE=35 (largest=256), FULL=19 (largest=128)
+(EngineCore pid=7073) INFO 10-21 15:52:01 [gpu_model_runner.py:5955] Estimated CUDA graph memory: 0.25 GiB total
+(EngineCore pid=7073) INFO 10-21 15:52:01 [gpu_worker.py:436] Available KV cache memory: 60.45 GiB
+(EngineCore pid=7073) INFO 10-21 15:52:01 [gpu_worker.py:470] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.9000 to 0.9032 to maintain the same effective KV cache size.
+(EngineCore pid=7073) INFO 10-21 15:52:01 [kv_cache_utils.py:1319] GPU KV cache size: 494,736 tokens
+(EngineCore pid=7073) INFO 10-21 15:52:01 [kv_cache_utils.py:1324] Maximum concurrency for 8,192 tokens per request: 197.42x
+(EngineCore pid=7073) 2026-10-21 15:52:04,386 - INFO - autotuner.py:262 - flashinfer.jit: [Autotuner]: Autotuning process starts ...
+(EngineCore pid=7073) 2026-10-21 15:52:04,422 - INFO - autotuner.py:268 - flashinfer.jit: [Autotuner]: Autotuning process ends
+(EngineCore pid=7073) Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/35 [00:00<?, ?it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   9%|▊         | 3/35 [00:00<00:01, 24.85it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  17%|█▋        | 6/35 [00:00<00:01, 20.95it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  26%|██▌       | 9/35 [00:00<00:01, 20.18it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  34%|███▍      | 12/35 [00:00<00:01, 20.59it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  43%|████▎     | 15/35 [00:00<00:00, 20.03it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  51%|█████▏    | 18/35 [00:00<00:00, 21.95it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  60%|██████    | 21/35 [00:01<00:00, 20.63it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  69%|██████▊   | 24/35 [00:01<00:00, 19.78it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  77%|███████▋  | 27/35 [00:01<00:00, 20.09it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  86%|████████▌ | 30/35 [00:01<00:00, 20.32it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  94%|█████████▍| 33/35 [00:01<00:00, 20.79it/s]Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 35/35 [00:01<00:00, 20.81it/s]
+(EngineCore pid=7073) Capturing CUDA graphs (decode, FULL):   0%|          | 0/19 [00:00<?, ?it/s]Capturing CUDA graphs (decode, FULL):  11%|█         | 2/19 [00:00<00:02,  8.15it/s]Capturing CUDA graphs (decode, FULL):  26%|██▋       | 5/19 [00:00<00:00, 15.69it/s]Capturing CUDA graphs (decode, FULL):  42%|████▏     | 8/19 [00:00<00:00, 20.01it/s]Capturing CUDA graphs (decode, FULL):  58%|█████▊    | 11/19 [00:00<00:00, 22.66it/s]Capturing CUDA graphs (decode, FULL):  74%|███████▎  | 14/19 [00:00<00:00, 24.37it/s]Capturing CUDA graphs (decode, FULL):  89%|████████▉ | 17/19 [00:00<00:00, 25.77it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 19/19 [00:01<00:00, 18.75it/s]
+(EngineCore pid=7073) INFO 10-21 15:52:08 [gpu_model_runner.py:6046] Graph capturing finished in 4 secs, took 0.32 GiB
+(EngineCore pid=7073) INFO 10-21 15:52:08 [gpu_worker.py:597] CUDA graph pool memory: 0.32 GiB (actual), 0.25 GiB (estimated), difference: 0.06 GiB (20.2%).
+(EngineCore pid=7073) INFO 10-21 15:52:08 [core.py:283] init engine (profile, create kv cache, warmup model) took 223.93 seconds
+(EngineCore pid=7073) INFO 10-21 15:52:08 [vllm.py:790] Asynchronous scheduling is enabled.
+[2026-10-21T15:52:08] [shard 3] model loaded in 358.9s on NVIDIA H100 80GB HBM3
+[2026-10-21T15:54:16] [train.jsonl shard 3] 224/3594 rows, 7 valid chains, 7320 tok/s
+[2026-10-21T15:56:01] [train.jsonl shard 3] 416/3594 rows, 13 valid chains, 7377 tok/s
+[2026-10-21T15:57:47] [train.jsonl shard 3] 608/3594 rows, 22 valid chains, 7393 tok/s
+[2026-10-21T15:59:32] [train.jsonl shard 3] 800/3594 rows, 30 valid chains, 7403 tok/s
+[2026-10-21T16:01:35] [train.jsonl shard 3] 1024/3594 rows, 39 valid chains, 7411 tok/s
+[2026-10-21T16:03:21] [train.jsonl shard 3] 1216/3594 rows, 51 valid chains, 7414 tok/s
+[2026-10-21T16:05:06] [train.jsonl shard 3] 1408/3594 rows, 60 valid chains, 7416 tok/s
+[2026-10-21T16:06:51] [train.jsonl shard 3] 1600/3594 rows, 72 valid chains, 7415 tok/s
+[2026-10-21T16:08:54] [train.jsonl shard 3] 1824/3594 rows, 83 valid chains, 7418 tok/s
+[2026-10-21T16:10:40] [train.jsonl shard 3] 2016/3594 rows, 94 valid chains, 7419 tok/s
+[2026-10-21T16:12:25] [train.jsonl shard 3] 2208/3594 rows, 103 valid chains, 7420 tok/s
+[2026-10-21T16:14:10] [train.jsonl shard 3] 2400/3594 rows, 112 valid chains, 7420 tok/s
+[2026-10-21T16:16:13] [train.jsonl shard 3] 2624/3594 rows, 125 valid chains, 7421 tok/s
+[2026-10-21T16:17:59] [train.jsonl shard 3] 2816/3594 rows, 128 valid chains, 7422 tok/s
+[2026-10-21T16:19:44] [train.jsonl shard 3] 3008/3594 rows, 141 valid chains, 7420 tok/s
+[2026-10-21T16:21:30] [train.jsonl shard 3] 3200/3594 rows, 230 valid chains, 7372 tok/s
+[2026-10-21T16:23:32] [train.jsonl shard 3] 3424/3594 rows, 331 valid chains, 7320 tok/s
+[2026-10-21T16:25:12] [train.jsonl shard 3] done: 3594 rows, 414 valid chains, 6774 invalid, 3323 zero-valid, 7258 tok/s
+[2026-10-21T16:27:16] [dev.jsonl shard 3] 224/255 rows, 11 valid chains, 7390 tok/s
+[2026-10-21T16:27:33] [dev.jsonl shard 3] done: 255 rows, 23 valid chains, 487 invalid, 239 zero-valid, 7294 tok/s
+(EngineCore pid=7073) INFO 10-21 16:27:33 [core.py:1210] Shutdown initiated (timeout=0)
+(EngineCore pid=7073) INFO 10-21 16:27:33 [core.py:1233] Shutdown complete
+[rank0]:[W1021 16:27:34.943008397 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())

@@ -1,0 +1,158 @@
+{
+  "mode": "validate-only",
+  "ok": true,
+  "model": "models/Qwen3.5-4B",
+  "modules": "innerjev/configs/4B/modules.json",
+  "target_mode": "file",
+  "max_input_tokens": 8192,
+  "max_batch_tokens": 8192,
+  "world_size": 8,
+  "global_batch": 64,
+  "errors": [],
+  "warnings": [],
+  "labels": {
+    "count": 255,
+    "first": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H"
+    ],
+    "last": [
+      "JR",
+      "JS",
+      "JT"
+    ],
+    "token_ids_first": [
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ]
+  },
+  "train": {
+    "n": 8,
+    "by_source": {
+      "cmb_exam_multi": 8
+    },
+    "by_lang": {
+      "zh": 8
+    },
+    "option_counts": {
+      "5": 7,
+      "6": 1
+    },
+    "positive_counts": {
+      "2": 1,
+      "3": 4,
+      "4": 3
+    },
+    "target_sum_min": 2,
+    "target_sum_max": 4,
+    "prompts": {
+      "n": 8,
+      "mean": 99.375,
+      "p50": 91,
+      "p90": 171,
+      "p99": 171,
+      "max": 171,
+      "total": 795,
+      "over_max_input": 0
+    },
+    "micro_plan": {
+      "batches": 1,
+      "micro_counts": {
+        "8": 1
+      },
+      "problems": [],
+      "problem_count": 0
+    }
+  },
+  "train_plan": {
+    "planned_steps": 1,
+    "warmup_steps": 1,
+    "eval_every": 1
+  },
+  "dev": {
+    "n": 16,
+    "by_source": {
+      "cmb_exam_multi": 16
+    },
+    "by_lang": {
+      "zh": 16
+    },
+    "option_counts": {
+      "5": 16
+    },
+    "positive_counts": {
+      "2": 5,
+      "3": 3,
+      "4": 6,
+      "5": 2
+    },
+    "target_sum_min": 2,
+    "target_sum_max": 5,
+    "prompts": {
+      "n": 16,
+      "mean": 98.1875,
+      "p50": 99,
+      "p90": 107,
+      "p99": 123,
+      "max": 123,
+      "total": 1571,
+      "over_max_input": 0
+    },
+    "micro_plan": {
+      "batches": 1,
+      "micro_counts": {
+        "8": 1
+      },
+      "problems": [],
+      "problem_count": 0
+    }
+  },
+  "targets": {
+    "mode": "file",
+    "source": "file",
+    "from_file": 3,
+    "missing": 5,
+    "missing_mode": "zero",
+    "extra_ids": 0,
+    "n_values": 41,
+    "min": 0.0,
+    "max": 1.0,
+    "mean": 0.18292682926829268,
+    "sum_min": 0.0,
+    "sum_max": 2.5,
+    "file": "logs/cpu_checks/ms_teacher_sample.jsonl"
+  },
+  "modules_check": {
+    "ok": true,
+    "model_type": "qwen3_5",
+    "architecture": "Qwen3_5ForConditionalGeneration",
+    "modules": 176,
+    "missing": [],
+    "nonlinear": [],
+    "no_weight": [],
+    "trainable_parameters": 3313500160,
+    "expected_trainable_parameters": 3313500160,
+    "trainable_matches": true,
+    "output_head_shape": [
+      248320,
+      2560
+    ],
+    "input_embedding_shape": [
+      248320,
+      2560
+    ],
+    "ties_embeddings": true
+  }
+}

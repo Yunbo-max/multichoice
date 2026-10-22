@@ -1,0 +1,1014 @@
+{
+  "cases": [
+    {
+      "raw": "答案：A、C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A、C"
+      }
+    },
+    {
+      "raw": "答案: A、C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": ": A、C"
+      }
+    },
+    {
+      "raw": "Answer: AC",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": AC"
+      }
+    },
+    {
+      "raw": "Answer: A C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A C"
+      }
+    },
+    {
+      "raw": "Answer: A,C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A,C"
+      }
+    },
+    {
+      "raw": "**Answer:** A, C.",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ":** A, C."
+      }
+    },
+    {
+      "raw": "最终答案：Ａ、Ｃ",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "最终答案",
+        "segment": "：Ａ、Ｃ"
+      }
+    },
+    {
+      "raw": "Answer: A and C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A and C"
+      }
+    },
+    {
+      "raw": "Answer: A, B, and D",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "B",
+        "D"
+      ],
+      "got": [
+        "A",
+        "B",
+        "D"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A, B, and D"
+      }
+    },
+    {
+      "raw": "The correct options are A, C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "correct options are",
+        "segment": "A, C"
+      }
+    },
+    {
+      "raw": "The answer is A and C.",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "answer",
+        "segment": "is A and C."
+      }
+    },
+    {
+      "raw": "答案：AC（正确）",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：AC（正确）"
+      }
+    },
+    {
+      "raw": "Answer: \\boxed{AC}",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": \\boxed{AC}"
+      }
+    },
+    {
+      "raw": "Answer: `AC`",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": `AC`"
+      }
+    },
+    {
+      "raw": "Answer: (A) (C)",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": (A) (C)"
+      }
+    },
+    {
+      "raw": "Answer: A; C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A; C"
+      }
+    },
+    {
+      "raw": "Answer: A / C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A / C"
+      }
+    },
+    {
+      "raw": "Answer: A or C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A or C"
+      }
+    },
+    {
+      "raw": "答案：A和C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A和C"
+      }
+    },
+    {
+      "raw": "答案：选A、C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：选A、C"
+      }
+    },
+    {
+      "raw": "答案：\nA、C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_lastline",
+        "marker": "",
+        "segment": "A、C"
+      }
+    },
+    {
+      "raw": "<think>Let me check. Answer: B is plausible.</think>\nAnswer: AC",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "post_think_marker",
+        "marker": "Answer",
+        "segment": ": AC"
+      }
+    },
+    {
+      "raw": "<think>The answer might be B.</think>\nAC",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "post_think_lastline",
+        "marker": "",
+        "segment": "AC"
+      }
+    },
+    {
+      "raw": "Answer: ABD",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "B",
+        "D"
+      ],
+      "got": [
+        "A",
+        "B",
+        "D"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": ABD"
+      }
+    },
+    {
+      "raw": "Answer: BE",
+      "valid": "ABCDE",
+      "expected": [
+        "B",
+        "E"
+      ],
+      "got": [
+        "B",
+        "E"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": BE"
+      }
+    },
+    {
+      "raw": "Answer: IS",
+      "valid": "ABCDEFGHIJKLMNOPQRS",
+      "expected": [
+        "I",
+        "S"
+      ],
+      "got": [
+        "I",
+        "S"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_lastline",
+        "marker": "",
+        "segment": "Answer: IS"
+      }
+    },
+    {
+      "raw": "Answer: ALL",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer: ALL"
+      }
+    },
+    {
+      "raw": "Answer: be",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer: be"
+      }
+    },
+    {
+      "raw": "Answer: A is correct, B is wrong",
+      "valid": "ABCDE",
+      "expected": [
+        "A"
+      ],
+      "got": [
+        "A"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A is correct, B is wrong"
+      }
+    },
+    {
+      "raw": "Answer: A, C. Option B is incorrect.",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A, C. Option B is incorrect."
+      }
+    },
+    {
+      "raw": "Answer: A, C. B and D are incorrect.",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A, C. B and D are incorrect."
+      }
+    },
+    {
+      "raw": "Answer: B is wrong, so A and C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": B is wrong, so A and C"
+      }
+    },
+    {
+      "raw": "答案：A正确、C错误",
+      "valid": "ABCDE",
+      "expected": [
+        "A"
+      ],
+      "got": [
+        "A"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A正确、C错误"
+      }
+    },
+    {
+      "raw": "答案：A错误C正确",
+      "valid": "ABCDE",
+      "expected": [
+        "C"
+      ],
+      "got": [
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A错误C正确"
+      }
+    },
+    {
+      "raw": "答案：A、C错误D正确",
+      "valid": "ABCDE",
+      "expected": [
+        "D"
+      ],
+      "got": [
+        "D"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A、C错误D正确"
+      }
+    },
+    {
+      "raw": "答案：排除A、C",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "答案：排除A、C"
+      }
+    },
+    {
+      "raw": "Answer: A is correct, C is incorrect",
+      "valid": "ABCDE",
+      "expected": [
+        "A"
+      ],
+      "got": [
+        "A"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A is correct, C is incorrect"
+      }
+    },
+    {
+      "raw": "Answer: A is incorrect, C is correct",
+      "valid": "ABCDE",
+      "expected": [
+        "C"
+      ],
+      "got": [
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A is incorrect, C is correct"
+      }
+    },
+    {
+      "raw": "Answer: not A, C",
+      "valid": "ABCDE",
+      "expected": [
+        "C"
+      ],
+      "got": [
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": not A, C"
+      }
+    },
+    {
+      "raw": "Answer: I choose A and C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": I choose A and C"
+      }
+    },
+    {
+      "raw": "Answer: I think the correct options are A and C",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "correct options are",
+        "segment": "A and C"
+      }
+    },
+    {
+      "raw": "Answer: A, C. B is not a correct option.",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A, C. B is not a correct option."
+      }
+    },
+    {
+      "raw": "答案：A、C。B不是正确选项",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A、C。B不是正确选项"
+      }
+    },
+    {
+      "raw": "答案：A、C。B并非正确选项",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A、C。B并非正确选项"
+      }
+    },
+    {
+      "raw": "答案：A、C。B正确、D错误",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "B",
+        "C"
+      ],
+      "got": [
+        "A",
+        "B",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A、C。B正确、D错误"
+      }
+    },
+    {
+      "raw": "Answer: G",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer: G"
+      }
+    },
+    {
+      "raw": "Answer: A, G",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer: A, G"
+      }
+    },
+    {
+      "raw": "Answer: None",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer: None"
+      }
+    },
+    {
+      "raw": "Answer:",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer:"
+      }
+    },
+    {
+      "raw": "答案：以上都是",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "答案：以上都是"
+      }
+    },
+    {
+      "raw": "Answer: All of the above",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer: All of the above"
+      }
+    },
+    {
+      "raw": "I am not sure.",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "I am not sure."
+      }
+    },
+    {
+      "raw": "Answer: 3",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "Answer: 3"
+      }
+    },
+    {
+      "raw": "答案：A（错误）、C（正确）",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "答案",
+        "segment": "：A（错误）、C（正确）"
+      }
+    },
+    {
+      "raw": "Answer: AC<|im_end|>",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": AC"
+      }
+    },
+    {
+      "raw": "Answer: A, C<|im_end|>\n",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": A, C"
+      }
+    },
+    {
+      "raw": "<think>\n\n</think>\n\nAnswer: B",
+      "valid": "ABCDE",
+      "expected": [
+        "B"
+      ],
+      "got": [
+        "B"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "post_think_marker",
+        "marker": "Answer",
+        "segment": ": B"
+      }
+    },
+    {
+      "raw": "\n\nAnswer: B",
+      "valid": "ABCDE",
+      "expected": [
+        "B"
+      ],
+      "got": [
+        "B"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": B"
+      }
+    },
+    {
+      "raw": "The reasoning above identifies both. Answer: AC",
+      "valid": "ABCDE",
+      "expected": [
+        "A",
+        "C"
+      ],
+      "got": [
+        "A",
+        "C"
+      ],
+      "ok": true,
+      "meta": {
+        "source": "full_marker",
+        "marker": "Answer",
+        "segment": ": AC"
+      }
+    },
+    {
+      "raw": "",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": ""
+      }
+    },
+    {
+      "raw": "<|im_end|>",
+      "valid": "ABCDE",
+      "expected": null,
+      "got": null,
+      "ok": true,
+      "meta": {
+        "source": null,
+        "reason": "no_valid_parse",
+        "tail": "\n"
+      }
+    }
+  ],
+  "passed": 61,
+  "failed": 0
+}

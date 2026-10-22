@@ -1,0 +1,35 @@
+{
+  "ms_self_test.json": {
+    "ok": true
+  },
+  "ms_validate_gold.json": {
+    "ok": true
+  },
+  "ms_validate_smoke_plan.json": {
+    "ok": true
+  },
+  "ms_validate_soft_target.json": {
+    "ok": true
+  },
+  "ms_validate_self_missing_teacher.json": {
+    "expected_failure": true,
+    "errors": [
+      "target file does not exist: data/multiselect/self_teacher_train.jsonl"
+    ]
+  },
+  "ms_prompt_equivalence.json": {
+    "ok": true
+  },
+  "ms_qz_payloads_check.json": {
+    "ok": true
+  },
+  "ms_cuda_guard.json": {
+    "ok": true
+  },
+  "ms_resume_export_check.json": {
+    "ok": true
+  },
+  "ms_eval_metrics_smoke.json": {
+    "ok": true
+  }
+}

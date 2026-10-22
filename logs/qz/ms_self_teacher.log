@@ -1,0 +1,32 @@
+=== ms self-teacher ===
+started_at=2026-10-21T15:44:43+00:00
+root=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare
+python=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-startlux/bin/python
+model=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B
+shards=8 samples=2 max_tokens=2048 max_model_len=8192
+batch_size=32 max_num_seqs=128 gpu_mem_util=0.9
+splits=train dev
+model complete: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B (2 safetensors shards)
+launch shard 0 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-00.log
+launch shard 1 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-01.log
+launch shard 2 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-02.log
+launch shard 3 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-03.log
+launch shard 4 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-04.log
+launch shard 5 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-05.log
+launch shard 6 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-06.log
+launch shard 7 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-07.log
+shard 0 exit=0
+shard 1 exit=0
+shard 2 exit=0
+shard 3 exit=0
+shard 4 exit=0
+shard 5 exit=0
+shard 6 exit=0
+shard 7 exit=0
+=== merge ===
+[2026-10-21T16:27:46] [merge] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect/self_teacher_dev.jsonl (2040 unique ids)
+[2026-10-21T16:27:48] [merge] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect/self_teacher_train.jsonl (28753 unique ids)
+[2026-10-21T16:27:49] [summary] wrote /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect/self_teacher_summary.json
+merge exit=0
+finished_at=2026-10-21T16:27:49+00:00
+JOB EXIT=0

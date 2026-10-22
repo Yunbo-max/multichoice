@@ -1,0 +1,96 @@
+{
+  "model": "models/Qwen3.5-4B",
+  "samples_per_question": 2,
+  "max_tokens": 2048,
+  "max_model_len": 8192,
+  "assumed_avg_completion_tokens": 1024,
+  "assumed_tokens_per_second_per_gpu": 2500.0,
+  "assumed_gpus": 8,
+  "assumed_price_usd_per_gpu_hour": 2.5,
+  "inputs": {
+    "data/multiselect/train.jsonl": {
+      "rows": 28753,
+      "by_source": {
+        "cmb_exam_multi": {
+          "n": 23981,
+          "sum": 2996077,
+          "mean": 124.9,
+          "p50": 118,
+          "p90": 151,
+          "max": 421
+        },
+        "multirc": {
+          "n": 4772,
+          "sum": 2166889,
+          "mean": 454.1,
+          "p50": 439,
+          "p90": 645,
+          "max": 915
+        }
+      },
+      "token_lengths": {
+        "n": 28753,
+        "sum": 5162966,
+        "mean": 179.6,
+        "p50": 122,
+        "p90": 400,
+        "max": 915
+      },
+      "estimated_prompt_tokens": 5162966,
+      "estimated_completion_tokens": 58886144,
+      "estimated_total_tokens": 64049110,
+      "estimated_gpu_hours": 7.117,
+      "estimated_wall_hours": 0.89,
+      "estimated_cost_usd": 17.79
+    },
+    "data/multiselect/dev.jsonl": {
+      "rows": 2040,
+      "by_source": {
+        "cmb_exam_multi": {
+          "n": 1708,
+          "sum": 212240,
+          "mean": 124.3,
+          "p50": 118,
+          "p90": 147,
+          "max": 399
+        },
+        "multirc": {
+          "n": 332,
+          "sum": 152160,
+          "mean": 458.3,
+          "p50": 447,
+          "p90": 650,
+          "max": 879
+        }
+      },
+      "token_lengths": {
+        "n": 2040,
+        "sum": 364400,
+        "mean": 178.6,
+        "p50": 121,
+        "p90": 399,
+        "max": 879
+      },
+      "estimated_prompt_tokens": 364400,
+      "estimated_completion_tokens": 4177920,
+      "estimated_total_tokens": 4542320,
+      "estimated_gpu_hours": 0.505,
+      "estimated_wall_hours": 0.063,
+      "estimated_cost_usd": 1.26
+    }
+  },
+  "totals": {
+    "rows": 30793,
+    "estimated_prompt_tokens": 5527366,
+    "estimated_completion_tokens": 63064064,
+    "estimated_total_tokens": 68591430,
+    "estimated_gpu_hours": 7.621,
+    "estimated_wall_hours": 0.953,
+    "estimated_cost_usd": 19.05
+  },
+  "notes": [
+    "No GPU generation was run; this is a projection from prompt token counts.",
+    "Assumes 1024 completion tokens per chain and 2500.0 tokens/s per GPU.",
+    "The merge step overwrites these estimates with observed profile numbers."
+  ]
+}

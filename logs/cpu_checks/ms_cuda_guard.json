@@ -1,0 +1,10 @@
+{
+  "expected": "RuntimeError: training requires CUDA",
+  "exit_code": 1,
+  "stderr_tail": [
+    "  File \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/harness/train_multiselect.py\", line 1087, in main",
+    "    raise RuntimeError(\"training requires CUDA; use --validate-only or --self-test on CPU\")",
+    "RuntimeError: training requires CUDA; use --validate-only or --self-test on CPU"
+  ],
+  "runtime_error_raised": true
+}

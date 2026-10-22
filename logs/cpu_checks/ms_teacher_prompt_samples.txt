@@ -1,0 +1,40 @@
+====================================================================================================
+id: cmb_train:2820 source: cmb_exam_multi lang: zh n_options: 6
+tokens: 195
+----------------------------------------------------------------------------------------------------
+<|im_start|>user
+State:
+医师考试；规培结业；全科医学科
+Question: 患者，女性，22岁。未婚处女，13岁月经初潮，周期基本规律。近半年来月经期延长，淋漓不尽。肛门指诊：子宫右侧可触及与子宫相连的囊实性不活动肿块，直径约7cm，轻度压痛，未触及痛性结节。本病例最可能的诊断是
+Options:
+(A) A: 多囊卵巢综合征
+(B) B: 卵巢浆液性囊腺瘤
+(C) C: 卵巢黏液性囊腺瘤
+(D) D: 卵巢畸胎瘤
+(E) E: 原发性痛经
+(F) F: 子宫内膜异位症
+
+请逐步推理，最后一行只输出所有正确选项的字母，格式为：Answer: AC（只写字母，不要输出其他内容）。<|im_end|>
+<|im_start|>assistant
+<think>
+
+
+====================================================================================================
+id: multirc:train:5083 source: multirc lang: en n_options: 4
+tokens: 291
+----------------------------------------------------------------------------------------------------
+<|im_start|>user
+State:
+Is this an insect or an animal? A snail is an animal just like you and me. Thats right, you too are an animal. No, you don't look like a snail. You do have some things in common. Animals can be divided into many groups. These groups are decided based on their characteristics. All animals have some basic features in common. That does not mean they are the same. They also have many differences. For example, snails are mollusks and not insects. Mollusks have a unique set of features. Notice the large foot that allows it to move. Yes, it only has one foot. Did you notice the long antennas on its head? This is where the snail's eyes are. They are on the end of the antenna. They are not on its head like most animals. The foot and eyes are unique features. Scientists use these features to place animals into groups.
+Question: Are snails insects?
+Options:
+(A) A: No, they are not. They are mollusks
+(B) B: Yes, they are mollusks too
+(C) C: In a manner of speaking
+(D) D: Yes
+
+Please reason step by step, then output the letters of all correct options on the final line exactly as: Answer: AC (letters only, no other text).<|im_end|>
+<|im_start|>assistant
+<think>
+
+

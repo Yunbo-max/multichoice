@@ -1,0 +1,16 @@
+{
+  "qz/ms_gold_train_8gpu.json": {
+    "ok": true,
+    "errors": [],
+    "name": "ms-gold-train-8gpu",
+    "command_lines": 35,
+    "command_chars": 1404
+  },
+  "qz/ms_self_train_8gpu.json": {
+    "ok": true,
+    "errors": [],
+    "name": "ms-self-train-8gpu",
+    "command_lines": 36,
+    "command_chars": 1530
+  }
+}

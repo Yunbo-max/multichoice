@@ -1,0 +1,10 @@
+=== SII-style self-teacher ===
+started_at=2026-10-21T21:40:11+00:00
+root=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare
+model=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B
+reasoning=1 readout=1 shards=1 samples=2
+max_tokens=1024 max_model_len=8192
+reasoning_batch=32 readout_batch=4 q_transform=sigmoid
+splits=train dev
+model complete: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B (2 safetensors shards)
+launch reasoning shard 0 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/sii_style_teacher_reasoning_shard-00.log

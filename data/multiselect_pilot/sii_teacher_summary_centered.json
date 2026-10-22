@@ -1,0 +1,83 @@
+{
+  "generated_at": "2026-10-21T22:02:08",
+  "method": "SII answer-slot readout over thinking chains; q_chain = sigmoid(label logits[:K] - logsumexp over all 255 labels), averaged over chains.",
+  "q_transform": "centered_sigmoid",
+  "totals": {
+    "rows": 300,
+    "rows_with_chains": 300,
+    "rows_zero_chain": 0,
+    "chains": 600,
+    "full_chains": 300
+  },
+  "valid_rate_chains": 1.0,
+  "by_source": {
+    "cmb_exam_multi": {
+      "rows": 150,
+      "chains": 300,
+      "rows_zero_chain": 0
+    },
+    "multirc": {
+      "rows": 150,
+      "chains": 300,
+      "rows_zero_chain": 0
+    }
+  },
+  "q_value_stats": {
+    "n": 1533,
+    "sum": 164.278408,
+    "mean": 0.1,
+    "p50": 0.001378,
+    "p90": 0.496055,
+    "max": 0.5
+  },
+  "q_histogram": {
+    "0.0": 1132,
+    "0.1": 53,
+    "0.2": 64,
+    "0.3": 42,
+    "0.4": 242
+  },
+  "predicted_set_size_histogram": {
+    "0": 300
+  },
+  "finish_reasons": {
+    "length": 511,
+    "stop": 89
+  },
+  "zero_chain": {
+    "count": 0,
+    "ids": []
+  },
+  "gold_diagnostics": {
+    "rows_with_gold": 300,
+    "mean_q_gold_positive": 0.177739,
+    "mean_q_gold_negative": 0.019095,
+    "exact_set_agreement_at_q_0.5": 0.0,
+    "mean_jaccard_at_q_0.5": 0.0
+  },
+  "observed": {
+    "profiles": 2,
+    "gpu_seconds": 48.0,
+    "gpu_hours": 0.0133
+  },
+  "notes": [
+    "Raw sigmoid saturates on an untrained base head; centering by the 255-label logsumexp keeps independent per-candidate probabilities without forcing a simplex. per_chain_probs/per_chain_softmax are recorded.",
+    "Raw sigmoid on a base-model output head can saturate when every label logit is positive (CPU smoke on Qwen3.5-4B: logits 0.07..24, sigmoid ~1.0 for all options); check q_value_stats and per_chain_softmax, and use --q-transform softmax if it does.",
+    "Reasoning truncated at max_tokens is still read out; no answer text is parsed anywhere in this pipeline.",
+    "q is null only when a row has no reasoning chain at all."
+  ],
+  "coverage": {
+    "dev": {
+      "input_rows": 100,
+      "output_rows": 100,
+      "missing": 0,
+      "extra": 0
+    },
+    "train": {
+      "input_rows": 200,
+      "output_rows": 200,
+      "missing": 0,
+      "extra": 0
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "n_questions": 2040,
+  "n_candidates": 10332,
+  "candidate_f1": 0.5503378667350953,
+  "question_em": 0.03137254901960784,
+  "group_sources": [
+    "cmb_exam_multi",
+    "multirc"
+  ],
+  "group_langs": [
+    "en",
+    "zh"
+  ],
+  "groups_have_f1": true,
+  "best_threshold_by_em": {
+    "threshold": 0.05,
+    "precision": 0.6331940055051484,
+    "recall": 0.9475209763539283,
+    "f1": 0.7591053532143731,
+    "question_em": 0.08970588235294118
+  },
+  "metrics_seconds": 0.006,
+  "tuning_seconds": 0.212
+}

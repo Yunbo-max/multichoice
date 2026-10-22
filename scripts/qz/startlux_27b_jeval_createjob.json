@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "startlux-27b-jeval-20261019",
+  "description": "StartLux-Decision 27B AutoThink on JEVal (11,257 items, all prompt lengths; longest single prompt 82,749 tokens). Served with --max-model-len 98304 so the 54.7 GB BF16 weights leave room for KV cache and the activation peak on an 80 GB H100; the longest prompt still fits whole, with ~15K tokens of thought room. One vLLM 0.19.1 server per GPU (8 replicas), official startlux-decide serve --launch-vllm path, gpu-memory-utilization 0.95. Requires the 27B weights pre-downloaded to models/StartLux-27B-AutoThink on shared storage; compute nodes have no network. Writes predictions, answers, metrics, nvidia-smi samples and the score summary under logs/qz/startlux_27b/. Resumable. If startup OOMs, lower MAX_MODEL_LEN to 86016 or use direct mode with --tp-size 2.",
+  "framework": "pytorch",
+  "command": "mkdir -p /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz && cd /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare && HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CONCURRENCY=256 MAX_MODEL_LEN=98304 bash scripts/qz/run_startlux_jeval.sh 27b 0,1,2,3,4,5,6,7 > /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/startlux-27b-jeval.log 2>&1",
+  "max_running_time_ms": "86400000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "7166bd2e-6cbe-4bd9-be38-762d11003e7f",
+      "shm_gi": 1800
+    }
+  ]
+}

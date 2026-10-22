@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "sii-27b-bench",
+  "description": "Throughput/utilization sweep for SII-Decision-27B on one 8xH100 node: 8 replicas at batch 1/8k and batch 2/16k padded-token budgets on an 800-row stride subset. Writes per-shard nvidia-smi profiles and an aggregate profile.json.",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare\nV=$R/.venv-sii\nmkdir -p $R/logs/qz $R/runs/qz\ncd $R\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\n\nfail=0\necho \"=== b1_8x1: 8x1 batch=1 budget=8192 ===\"\nMODEL=$R/models/SII-27B-LoRA INPUT=$R/data/jeval/sii_input.jsonl \\\nOUTDIR=$R/runs/qz/sii_27b_bench/b1_8x1 \\\nSHARDS=8 GPUS_PER_REPLICA=1 BATCH_SIZE=1 MAX_BATCH_TOKENS=8192 \\\nLIMIT=800 LIMIT_MODE=stride SCORE=0 RESUME=0 \\\nbash harness/run_sii_eval.sh > $R/logs/qz/sii_27b_bench_b1_8x1.log 2>&1 || fail=1\nmkdir -p $R/runs/qz/sii_27b_bench/profiles\ncp -f $R/runs/qz/sii_27b_bench/b1_8x1/profile.json $R/runs/qz/sii_27b_bench/profiles/profile-0.json || true\necho \"=== b2_8x1: 8x1 batch=2 budget=16384 ===\"\nMODEL=$R/models/SII-27B-LoRA INPUT=$R/data/jeval/sii_input.jsonl \\\nOUTDIR=$R/runs/qz/sii_27b_bench/b2_8x1 \\\nSHARDS=8 GPUS_PER_REPLICA=1 BATCH_SIZE=2 MAX_BATCH_TOKENS=16384 \\\nLIMIT=800 LIMIT_MODE=stride SCORE=0 RESUME=0 \\\nbash harness/run_sii_eval.sh > $R/logs/qz/sii_27b_bench_b2_8x1.log 2>&1 || fail=1\nmkdir -p $R/runs/qz/sii_27b_bench/profiles\ncp -f $R/runs/qz/sii_27b_bench/b2_8x1/profile.json $R/runs/qz/sii_27b_bench/profiles/profile-1.json || true\n\"$V/bin/python\" -I $R/harness/sii_gpu_eval.py --merge-profiles $R/runs/qz/sii_27b_bench/profiles --output $R/runs/qz/sii_27b_bench/profile.json\ncat $R/runs/qz/sii_27b_bench/profile.json > $R/logs/qz/sii_27b_bench_summary.json\n[ $fail -eq 0 ] || echo \"one or more benchmark configs failed\"\nexit $fail\n",
+  "max_running_time_ms": "43200000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "7166bd2e-6cbe-4bd9-be38-762d11003e7f",
+      "shm_gi": 1800
+    }
+  ]
+}

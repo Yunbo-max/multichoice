@@ -1,0 +1,18 @@
+{
+  "shards": 1,
+  "samples": 2,
+  "max_tokens": 4096,
+  "max_model_len": 8192,
+  "splits": [
+    "train",
+    "dev"
+  ],
+  "shard_exit_codes": [
+    0
+  ],
+  "merge_exit_code": 0,
+  "exit_code": 0,
+  "started_at": "2026-10-21T17:06:47+00:00",
+  "finished_at": "2026-10-21T17:15:02+00:00",
+  "summary": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect_pilot/summary_budget.json"
+}

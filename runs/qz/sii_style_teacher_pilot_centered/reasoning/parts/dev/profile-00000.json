@@ -1,0 +1,23 @@
+{
+  "phase": "reasoning",
+  "input": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect_pilot/dev.jsonl",
+  "output": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_style_teacher_pilot_centered/reasoning/parts/dev/part-00000.jsonl",
+  "model": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B",
+  "shard": 0,
+  "shards": 1,
+  "samples": 2,
+  "max_tokens": 1024,
+  "max_model_len": 8192,
+  "rows_selected": 100,
+  "chains": 200,
+  "truncated": 162,
+  "errors": 0,
+  "prompt_tokens": 26117,
+  "completion_tokens": 190735,
+  "gen_seconds": 31.475,
+  "completion_tokens_per_s": 6059.87,
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "status": "ok",
+  "created_at": "2026-10-21T21:59:24",
+  "load_seconds": 0.0
+}

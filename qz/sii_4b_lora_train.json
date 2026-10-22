@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "sii-4b-lora-train",
+  "description": "SII-Decision-4B LoRA reproduction: official config (4 GPUs, micro 4, lr 5e-5), local base Qwen3.5-4B and local data/sii-4b; stops at released checkpoint step 276.",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare\nV=$R/.venv-sii\nmkdir -p $R/logs/qz $R/runs/qz\ncd $R\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\n\nexport PYTHONPATH=$R/innerjev\nexport RUN_ID=${RUN_ID:-v1}\nOUT=$R/runs/qz/sii_4b_lora/$RUN_ID\n\"$V/bin/python\" -I $R/harness/sii_gpu_eval.py --check-model --model $R/models/Qwen3.5-4B || { echo \"base model incomplete\"; exit 3; }\nmkdir -p \"$OUT\"\n\"$V/bin/torchrun\" --standalone --nnodes 1 --nproc_per_node 4 -m sii_decision.train \\\n  --config $R/innerjev/configs/4B/lora.json \\\n  --base-model $R/models/Qwen3.5-4B \\\n  --data-dir $R/data/sii-4b \\\n  --output \"$OUT\" > $R/logs/qz/sii_4b_lora_train.log 2>&1\nstatus=$?\necho \"JOB EXIT=$status\"\nexit $status\n",
+  "max_running_time_ms": "43200000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "7166bd2e-6cbe-4bd9-be38-762d11003e7f",
+      "shm_gi": 1800
+    }
+  ]
+}

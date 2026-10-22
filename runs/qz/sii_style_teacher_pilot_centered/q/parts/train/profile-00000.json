@@ -1,0 +1,19 @@
+{
+  "phase": "readout",
+  "input": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect_pilot/train.jsonl",
+  "reasoning": [
+    "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_style_teacher_pilot_centered/reasoning/train.jsonl"
+  ],
+  "output": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_style_teacher_pilot_centered/q/parts/train/part-00000.jsonl",
+  "model": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B",
+  "shard": 0,
+  "shards": 1,
+  "samples": 2,
+  "rows": 200,
+  "chains": 400,
+  "rows_zero_chain": 0,
+  "skipped_unusable": 0,
+  "seconds": 32.693,
+  "status": "ok",
+  "created_at": "2026-10-21T22:01:18"
+}

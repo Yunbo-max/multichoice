@@ -1,0 +1,76 @@
+usage: generate_self_teacher.py [-h] [--model MODEL] [--input INPUT]
+                                [--output OUTPUT] [--shard SHARD]
+                                [--shards SHARDS] [--samples SAMPLES]
+                                [--batch-size BATCH_SIZE]
+                                [--max-tokens MAX_TOKENS]
+                                [--max-model-len MAX_MODEL_LEN]
+                                [--max-num-seqs MAX_NUM_SEQS]
+                                [--gpu-memory-utilization GPU_MEMORY_UTILIZATION]
+                                [--temperature TEMPERATURE] [--top-p TOP_P]
+                                [--top-k TOP_K] [--seed SEED]
+                                [--thinking-token-budget THINKING_TOKEN_BUDGET]
+                                [--enforce-eager] [--disable-log-stats]
+                                [--resume] [--limit LIMIT]
+                                [--progress-every PROGRESS_EVERY]
+                                [--validate-only] [--parser-selftest]
+                                [--estimate] [--check-model] [--merge-all]
+                                [--report REPORT] [--summary SUMMARY]
+                                [--parts-root PARTS_ROOT]
+                                [--data-dir DATA_DIR]
+                                [--invalid-dir INVALID_DIR]
+                                [--assume-tokens-per-second ASSUME_TOKENS_PER_SECOND]
+                                [--assume-gpus ASSUME_GPUS]
+                                [--assume-price-per-gpu-hour PRICE_PER_GPU_HOUR]
+                                [--assume-avg-completion-tokens ASSUME_AVG_COMPLETION_TOKENS]
+
+Self-teacher soft-target generator for multi-select decisions
+
+options:
+  -h, --help            show this help message and exit
+  --model MODEL
+  --input INPUT         input JSONL; repeat for train+dev (default: [])
+  --output OUTPUT       output JSONL; one per --input (default:
+                        self_teacher_<stem>.jsonl next to the input) (default:
+                        [])
+  --shard SHARD
+  --shards SHARDS
+  --samples SAMPLES     independent thinking chains per question (default: 2)
+  --batch-size BATCH_SIZE
+                        prompts per vLLM generate call (default: 32)
+  --max-tokens MAX_TOKENS
+  --max-model-len MAX_MODEL_LEN
+  --max-num-seqs MAX_NUM_SEQS
+  --gpu-memory-utilization GPU_MEMORY_UTILIZATION
+  --temperature TEMPERATURE
+  --top-p TOP_P
+  --top-k TOP_K
+  --seed SEED
+  --thinking-token-budget THINKING_TOKEN_BUDGET
+                        optional vLLM thinking budget (0 = disabled) (default:
+                        0)
+  --enforce-eager
+  --disable-log-stats
+  --resume              skip ids already present in the output part file
+                        (default: False)
+  --limit LIMIT         only the first N rows of each input (smoke tests)
+                        (default: 0)
+  --progress-every PROGRESS_EVERY
+  --validate-only
+  --parser-selftest
+  --estimate
+  --check-model
+  --merge-all
+  --report REPORT       JSON report for --validate-only/--parser-
+                        selftest/--estimate (default: None)
+  --summary SUMMARY
+  --parts-root PARTS_ROOT
+  --data-dir DATA_DIR
+  --invalid-dir INVALID_DIR
+  --assume-tokens-per-second ASSUME_TOKENS_PER_SECOND
+                        per-GPU throughput used only for cost estimates
+                        (default: 2500.0)
+  --assume-gpus ASSUME_GPUS
+                        GPU count used only for wall-clock estimates (default:
+                        8)
+  --assume-price-per-gpu-hour PRICE_PER_GPU_HOUR
+  --assume-avg-completion-tokens ASSUME_AVG_COMPLETION_TOKENS

@@ -1,0 +1,12 @@
+{
+  "resume_dir_resolves": true,
+  "resume_step_override": true,
+  "verify_existing_sii_checkpoint_ok": true,
+  "verify_existing_shards": 3,
+  "verify_empty_dir_fails": true,
+  "verify_empty_errors": [
+    "missing config.json",
+    "missing tokenizer_config.json",
+    "no safetensors weights found"
+  ]
+}

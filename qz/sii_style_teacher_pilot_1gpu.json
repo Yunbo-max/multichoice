@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "sii-style-teacher-pilot-1gpu",
+  "description": "SII-style self-teacher pilot on the 300-row multiselect_pilot set, 1 H100: phase A samples 2 Qwen3.5-4B thinking chains (stop at </think>, 1024-token cap) with vLLM; phase B reads SII's answer-slot prompt at the end of each chain (last hidden state -> 255 label logits -> sigmoid per option, averaged over chains) with transformers. No answer parsing. CPU smoke on the base head shows the raw sigmoid q saturates (all 255 label logits are positive), so check q_value_stats/per_chain_softmax and set Q_TRANSFORM=softmax if every q is ~1. Writes runs/qz/sii_style_teacher_pilot and data/multiselect_pilot/sii_teacher_summary.json. CreateJob dry-run first; this payload is not submitted by the harness author.",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\ncd \"$R\"\nmkdir -p \"$R/logs/qz\" \"$R/runs/qz/sii_style_teacher_pilot\"\nREASONING=1 READOUT=1 SHARDS=1 SAMPLES=2 MAX_TOKENS=1024 MAX_MODEL_LEN=8192 REASONING_BATCH=32 READOUT_BATCH=4 Q_TRANSFORM=sigmoid DATA_DIR=\"$R/data/multiselect_pilot\" RUN_ROOT=\"$R/runs/qz/sii_style_teacher_pilot\" SUMMARY=\"$R/data/multiselect_pilot/sii_teacher_summary.json\" LOG_DIR=\"$R/logs/qz\" bash harness/run_sii_style_teacher.sh > \"$R/logs/qz/sii_style_teacher_pilot.log\" 2>&1\nstatus=$?\necho \"JOB EXIT=$status\"\nexit $status\n",
+  "max_running_time_ms": "21600000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}

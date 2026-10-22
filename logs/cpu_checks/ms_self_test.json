@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "checks": {
+    "bce_matches_formula": true,
+    "g_zero_when_lambda_zero": true,
+    "identity_graph_matches": true,
+    "cosine_laplacian_psd": true,
+    "cosine_kernel_nonnegative": true,
+    "graph_gradients_finite": true,
+    "split_batch_cover": true,
+    "question_em": true,
+    "candidate_counts": true,
+    "group_keys": true,
+    "threshold_grid_size": true,
+    "threshold_best_em": true,
+    "batch_plan": true,
+    "micro_choice": true,
+    "micro_rejects_oversize": true,
+    "lr_warmup": true,
+    "lr_end": true
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "shards": 1,
+  "samples": 2,
+  "max_tokens": 1024,
+  "max_model_len": 8192,
+  "mode": {
+    "reasoning": true,
+    "readout": true
+  },
+  "phase_a_exit": 0,
+  "phase_b_exit": 0,
+  "reasoning_merge_exit": 0,
+  "readout_merge_exit": 0,
+  "exit_code": 0,
+  "splits": [
+    "train",
+    "dev"
+  ],
+  "started_at": "2026-10-21T21:49:18+00:00",
+  "finished_at": "2026-10-21T22:02:08+00:00",
+  "summary": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect_pilot/sii_teacher_summary_centered.json"
+}

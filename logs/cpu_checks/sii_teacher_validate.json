@@ -1,0 +1,128 @@
+{
+  "model": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B",
+  "option_labels": 255,
+  "labels_head": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J"
+  ],
+  "labels_tail": [
+    "JR",
+    "JS",
+    "JT"
+  ],
+  "label_token_ids_head": [
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41
+  ],
+  "inputs": {
+    "data/multiselect_pilot/train.jsonl": {
+      "rows": 200,
+      "invalid_rows": [],
+      "invalid_row_count": 0,
+      "by_source": {
+        "cmb_exam_multi": {
+          "n": 100,
+          "sum": 9471,
+          "mean": 94.7,
+          "p50": 87,
+          "p90": 124,
+          "max": 231
+        },
+        "multirc": {
+          "n": 100,
+          "sum": 40343,
+          "mean": 403.4,
+          "p50": 394,
+          "p90": 573,
+          "max": 842
+        }
+      },
+      "think_prefix_tokens": {
+        "n": 200,
+        "sum": 49814,
+        "mean": 249.1,
+        "p50": 213,
+        "p90": 537,
+        "max": 842
+      },
+      "read_prompt_empty_tokens": {
+        "n": 200,
+        "sum": 51214,
+        "mean": 256.1,
+        "p50": 220,
+        "p90": 544,
+        "max": 849
+      },
+      "estimated_read_prompt_tokens_max_reasoning": 1873,
+      "prompt_sample": {
+        "id": "cmb_train:266189",
+        "think_prefix": "<|im_start|>user\nState:\n医学考研；中医综合；考研中医综合\nQuestion: 不寐实证的治法是\nOptions:\n(A) A: 疏肝泻火\n(B) B: 消导和中\n(C) C: 镇惊安神\n(D) D: 清化痰热\n(E) E:<|im_end|>\n<|im_start|>assistant\n<think>\n",
+        "read_prompt_empty_reasoning": "<|im_start|>user\nState:\n医学考研；中医综合；考研中医综合\nQuestion: 不寐实证的治法是\nOptions:\n(A) A: 疏肝泻火\n(B) B: 消导和中\n(C) C: 镇惊安神\n(D) D: 清化痰热\n(E) E:<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\nThe correct answer is (",
+        "read_prompt_with_reasoning": "<|im_start|>user\nState:\n医学考研；中医综合；考研中医综合\nQuestion: 不寐实证的治法是\nOptions:\n(A) A: 疏肝泻火\n(B) B: 消导和中\n(C) C: 镇惊安神\n(D) D: 清化痰热\n(E) E:<|im_end|>\n<|im_start|>assistant\n<think>\nshort reasoning\n</think>\n\nThe correct answer is ("
+      }
+    },
+    "data/multiselect_pilot/dev.jsonl": {
+      "rows": 100,
+      "invalid_rows": [],
+      "invalid_row_count": 0,
+      "by_source": {
+        "cmb_exam_multi": {
+          "n": 50,
+          "sum": 4463,
+          "mean": 89.3,
+          "p50": 87,
+          "p90": 107,
+          "max": 129
+        },
+        "multirc": {
+          "n": 50,
+          "sum": 21654,
+          "mean": 433.1,
+          "p50": 435,
+          "p90": 608,
+          "max": 650
+        }
+      },
+      "think_prefix_tokens": {
+        "n": 100,
+        "sum": 26117,
+        "mean": 261.2,
+        "p50": 220,
+        "p90": 563,
+        "max": 650
+      },
+      "read_prompt_empty_tokens": {
+        "n": 100,
+        "sum": 26817,
+        "mean": 268.2,
+        "p50": 227,
+        "p90": 570,
+        "max": 657
+      },
+      "estimated_read_prompt_tokens_max_reasoning": 1681,
+      "prompt_sample": {
+        "id": "cmb_train:241218",
+        "think_prefix": "<|im_start|>user\nState:\n专业知识考试；中医学与中药学；中医基础理论\nQuestion: 环绕口唇的经脉有\nOptions:\n(A) A: 任脉\n(B) B: 胃经\n(C) C: 冲脉\n(D) D: 大肠经\n(E) E: 肝经<|im_end|>\n<|im_start|>assistant\n<think>\n",
+        "read_prompt_empty_reasoning": "<|im_start|>user\nState:\n专业知识考试；中医学与中药学；中医基础理论\nQuestion: 环绕口唇的经脉有\nOptions:\n(A) A: 任脉\n(B) B: 胃经\n(C) C: 冲脉\n(D) D: 大肠经\n(E) E: 肝经<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\nThe correct answer is (",
+        "read_prompt_with_reasoning": "<|im_start|>user\nState:\n专业知识考试；中医学与中药学；中医基础理论\nQuestion: 环绕口唇的经脉有\nOptions:\n(A) A: 任脉\n(B) B: 胃经\n(C) C: 冲脉\n(D) D: 大肠经\n(E) E: 肝经<|im_end|>\n<|im_start|>assistant\n<think>\nshort reasoning\n</think>\n\nThe correct answer is ("
+      }
+    }
+  },
+  "checked_at": "2026-10-21T21:04:14"
+}

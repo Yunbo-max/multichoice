@@ -1,0 +1,150 @@
+{
+  "deliverables": {
+    "trainer": "harness/train_multiselect.py",
+    "qz_gold": "qz/ms_gold_train_8gpu.json",
+    "qz_self": "qz/ms_self_train_8gpu.json"
+  },
+  "cpu_validation": {
+    "gold_dataset_ok": true,
+    "self_test_ok": true,
+    "prompts_match_sii_harness": true,
+    "qz_payloads_ok": true
+  },
+  "data": {
+    "train_n": 28753,
+    "dev_n": 2040,
+    "train_sources": {
+      "cmb_exam_multi": 23981,
+      "multirc": 4772
+    },
+    "train_langs": {
+      "en": 4772,
+      "zh": 23981
+    },
+    "train_option_counts": {
+      "2": 308,
+      "3": 758,
+      "4": 824,
+      "5": 24540,
+      "6": 1027,
+      "7": 593,
+      "8": 289,
+      "9": 208,
+      "10": 99,
+      "11": 52,
+      "12": 22,
+      "13": 13,
+      "14": 8,
+      "15": 6,
+      "16": 5,
+      "21": 1
+    },
+    "dev_option_counts": {
+      "2": 21,
+      "3": 51,
+      "4": 39,
+      "5": 1770,
+      "6": 76,
+      "7": 36,
+      "8": 22,
+      "9": 12,
+      "10": 7,
+      "11": 4,
+      "12": 1,
+      "13": 1
+    },
+    "max_options": 21,
+    "train_positive_counts": {
+      "1": 1308,
+      "2": 6842,
+      "3": 9222,
+      "4": 8060,
+      "5": 3210,
+      "6": 83,
+      "7": 13,
+      "8": 8,
+      "9": 5,
+      "10": 2
+    }
+  },
+  "prompts": {
+    "train": {
+      "n": 28753,
+      "mean": 155.23075852954474,
+      "p50": 98,
+      "p90": 375,
+      "p99": 647,
+      "max": 889,
+      "total": 4463350,
+      "over_max_input": 0
+    },
+    "dev": {
+      "n": 2040,
+      "mean": 154.30196078431374,
+      "p50": 97,
+      "p90": 373,
+      "p99": 656,
+      "max": 853,
+      "total": 314776,
+      "over_max_input": 0
+    }
+  },
+  "model": {
+    "ok": true,
+    "model_type": "qwen3_5",
+    "architecture": "Qwen3_5ForConditionalGeneration",
+    "modules": 176,
+    "missing": [],
+    "nonlinear": [],
+    "no_weight": [],
+    "trainable_parameters": 3313500160,
+    "expected_trainable_parameters": 3313500160,
+    "trainable_matches": true,
+    "output_head_shape": [
+      248320,
+      2560
+    ],
+    "input_embedding_shape": [
+      248320,
+      2560
+    ],
+    "ties_embeddings": true
+  },
+  "plan": {
+    "global_batch": 64,
+    "world_size": 8,
+    "micro_per_rank": 8,
+    "planned_steps": 450,
+    "warmup_steps": 14,
+    "eval_steps": [
+      45,
+      90,
+      135,
+      180,
+      225,
+      270,
+      315,
+      360,
+      405,
+      450
+    ],
+    "train_rows_per_step": 64,
+    "approx_real_tokens_per_epoch": 4463350,
+    "lr": 2e-06,
+    "epochs": 1
+  },
+  "runtime_estimate": {
+    "reference": "SII 4B full-rank 8xH100 run in this repo: 459 steps, 1374.9 s pure training (~3.0 s/step), 35 min wall including evals and 5 checkpoints (runs/qz/sii_4b_full/v1).",
+    "expected_train_compute": "20-35 min for 450 steps at ~2.7-4.5 s/step",
+    "expected_wall": "40-75 min including 10 dev evals and up to 10 checkpoints (about 10.4 GB each, max_shard_size 5GB); 6 h job limit leaves ample margin.",
+    "not_measured": "No GPU in this container; estimate is extrapolated from the existing SII run."
+  },
+  "untested_on_gpu": [
+    "FSDP wrapping/forward/backward with the 4B model and 176 trainable modules",
+    "BF16 full-state-dict export and reload by harness/sii_gpu_eval.py",
+    "optional --lora DDP path",
+    "--lambda-g > 0 with --graph identity|cosine",
+    "--resume restores model weights and step index only (Adam moments are not saved)"
+  ],
+  "qz_submitted": false
+}

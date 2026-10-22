@@ -1,0 +1,77 @@
+{
+  "model": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B",
+  "device": "cpu",
+  "row_id": "cmb_train:266189",
+  "question": "不寐实证的治法是",
+  "n_options": 5,
+  "prior_tokens": [
+    138,
+    110
+  ],
+  "forward_seconds_two_prompts": 182.26,
+  "logits_first5": [
+    24.0,
+    20.625,
+    21.875,
+    20.75,
+    21.875
+  ],
+  "logits_all255": {
+    "min": 0.0674,
+    "median": 5.7188,
+    "max": 24.5
+  },
+  "per_chain": [
+    {
+      "sigmoid": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "softmax": [
+        0.76227754,
+        0.0260837,
+        0.09104107,
+        0.02955671,
+        0.09104107
+      ]
+    },
+    {
+      "sigmoid": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "softmax": [
+        0.90711886,
+        0.00611212,
+        0.0241739,
+        0.01141894,
+        0.05117614
+      ]
+    }
+  ],
+  "q_sigmoid": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "q_softmax": [
+    0.8346982,
+    0.01609791,
+    0.05760748,
+    0.02048783,
+    0.07110861
+  ],
+  "notes": [
+    "Real Qwen3.5-4B readout on CPU (no GPU); two-chain average over the same row.",
+    "All label logits are positive, so the raw sigmoid saturates near 1.0 for every option; softmax remains discriminative.",
+    "This is the saturation risk for the sigmoid q definition on the base head."
+  ]
+}

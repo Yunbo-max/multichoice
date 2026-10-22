@@ -1,0 +1,18 @@
+=== ms self-teacher ===
+started_at=2026-10-21T16:36:44+00:00
+root=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare
+python=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-startlux/bin/python
+model=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B
+shards=1 samples=2 max_tokens=4096 max_model_len=8192
+batch_size=32 max_num_seqs=128 gpu_mem_util=0.9
+splits=train dev
+model complete: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B (2 safetensors shards)
+launch shard 0 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/logs/qz/ms_self_teacher_shard-00.log
+shard 0 exit=0
+=== merge ===
+[2026-10-21T16:51:21] [merge] 1 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect_pilot/self_teacher_dev.jsonl (100 unique ids)
+[2026-10-21T16:51:21] [merge] 1 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect_pilot/self_teacher_train.jsonl (200 unique ids)
+[2026-10-21T16:51:21] [summary] wrote /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/multiselect_pilot/summary.json
+merge exit=0
+finished_at=2026-10-21T16:51:21+00:00
+JOB EXIT=0

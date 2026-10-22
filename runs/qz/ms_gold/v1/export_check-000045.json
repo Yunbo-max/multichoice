@@ -1,0 +1,10 @@
+{
+  "path": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/ms_gold/v1/checkpoint-45",
+  "ok": true,
+  "errors": [],
+  "files": {
+    "shards": 3,
+    "missing_shards": [],
+    "bytes": 10370086166
+  }
+}

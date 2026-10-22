@@ -1,0 +1,79 @@
+Unified multi-select trainer: CPU validation commands and evidence
+Run from /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare
+Python: .venv-sii/bin/python (torch 2.8.0+cu128, transformers 5.14.1)
+No GPU in this container; no QZ job was submitted.
+
+1) Unit/self test (loss formula, graphs, metrics, threshold grid, plan, micro, LR)
+   .venv-sii/bin/python -I harness/train_multiselect.py --self-test \
+     | tee logs/cpu_checks/ms_self_test.json
+   -> ok=true, 17/17 checks
+
+2) Full gold data validation (tokenizer + config only; module names checked on meta tensors, no weights)
+   .venv-sii/bin/python -I harness/train_multiselect.py --validate-only \
+     --train data/multiselect/train.jsonl --dev data/multiselect/dev.jsonl \
+     --model models/Qwen3.5-4B --modules innerjev/configs/4B/modules.json \
+     --target gold --world-size 8 --global-batch 64 \
+     --max-input-tokens 8192 --max-batch-tokens 8192 \
+     --validate-output logs/cpu_checks/ms_validate_gold.json
+   -> exit 0, ok=true
+   -> train n=28753, dev n=2040, K=2..21, 255 single-token labels
+   -> 176 modules, trainable parameters 3313500160 (matches SII official count)
+   -> prompt tokens: train mean 155.2 / p90 375 / p99 647 / max 889;
+      dev mean 154.3 / p90 373 / p99 656 / max 853
+   -> 450 planned steps, 14 warmup steps, micro=8 per rank for all 450 batches
+   -> target multi-hot, sums 1..10, never normalized
+
+3) Self-target mode with the teacher file absent (expected failure until it exists)
+   .venv-sii/bin/python -I harness/train_multiselect.py --validate-only \
+     --train data/multiselect/train.jsonl --dev data/multiselect/dev.jsonl \
+     --model models/Qwen3.5-4B --modules innerjev/configs/4B/modules.json \
+     --target file --target-file data/multiselect/self_teacher_train.jsonl \
+     --validate-output logs/cpu_checks/ms_validate_self_missing_teacher.json
+   -> exit 1, ok=false, error: target file does not exist
+
+4) Soft-target parsing on a small synthetic teacher file (values in [0,1], NOT normalized)
+   python3 (writes logs/cpu_checks/ms_teacher_sample.jsonl from 3 train ids)
+   .venv-sii/bin/python -I harness/train_multiselect.py --validate-only \
+     --train data/multiselect/train.jsonl --dev data/multiselect/dev.jsonl \
+     --model models/Qwen3.5-4B --modules innerjev/configs/4B/modules.json \
+     --target file --target-file logs/cpu_checks/ms_teacher_sample.jsonl \
+     --target-missing zero --limit 8 --limit-dev 16 \
+     --validate-output logs/cpu_checks/ms_validate_soft_target.json
+   -> exit 0; 3 rows from file, 5 zero-filled; target sums up to 2.5 (not normalized)
+
+5) Smoke plan (--limit/--limit-dev/--max-steps)
+   .venv-sii/bin/python -I harness/train_multiselect.py --validate-only \
+     --train data/multiselect/train.jsonl --dev data/multiselect/dev.jsonl \
+     --model models/Qwen3.5-4B --modules innerjev/configs/4B/modules.json \
+     --target gold --limit 512 --limit-dev 128 --max-steps 2 \
+     --validate-output logs/cpu_checks/ms_validate_smoke_plan.json
+   -> exit 0; 512 train rows, 8 planned steps, stop_step=2, micro=8
+
+6) Prompt/label equivalence with the SII harness
+   importlib comparison against harness/sii_gpu_eval.py on all 2040 dev rows
+   -> logs/cpu_checks/ms_prompt_equivalence.json: 255 labels equal, 0 mismatches
+
+7) QZ payload schema + shell syntax (dry check only, NOT submitted)
+   python3 json/schema/required-ID check + bash -n on both commands
+   -> logs/cpu_checks/ms_qz_payloads_check.json: both ok=true
+
+8) CPU must refuse real training (guard)
+   run without --validate-only on this GPU-less container
+   -> logs/cpu_checks/ms_cuda_guard.json: exit 1, RuntimeError: training requires CUDA
+
+9) Resume resolution and export verifier
+   -> logs/cpu_checks/ms_resume_export_check.json:
+      run-dir -> latest checkpoint-45, step override, SII checkpoint verifies (3 shards),
+      empty directory fails verification
+
+Submission (do this only from the machine with the qz CLI; NOT done here):
+   qz train CreateJob --dry-run --data "$(cat qz/ms_gold_train_8gpu.json)"
+   qz train CreateJob --data "$(cat qz/ms_gold_train_8gpu.json)"
+   qz train CreateJob --dry-run --data "$(cat qz/ms_self_train_8gpu.json)"
+   qz train CreateJob --data "$(cat qz/ms_self_train_8gpu.json)"
+
+Expected full-run shape:
+   450 optimizer steps (28753 rows / 64), 14 warmup, cosine to step 450, lr 2e-6
+   eval at steps 45,90,135,180,225,270,315,360,405,450
+   micro=8 per rank, 8 rows/rank/step, peak padded batch <= 8*889 = 7112 <= 8192 tokens
+   up to 10 checkpoints (BF16, ~10.4 GB each), plus final/ copy; ~6 h job limit

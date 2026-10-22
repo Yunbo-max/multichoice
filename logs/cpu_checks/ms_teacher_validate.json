@@ -1,0 +1,116 @@
+{
+  "model": "models/Qwen3.5-4B",
+  "inputs": {
+    "data/multiselect/train.jsonl": {
+      "rows": 28753,
+      "invalid_rows": [],
+      "invalid_row_count": 0,
+      "by_source": {
+        "cmb_exam_multi": {
+          "n": 23981,
+          "sum": 2996077,
+          "mean": 124.9,
+          "p50": 118,
+          "p90": 151,
+          "max": 421
+        },
+        "multirc": {
+          "n": 4772,
+          "sum": 2166889,
+          "mean": 454.1,
+          "p50": 439,
+          "p90": 645,
+          "max": 915
+        }
+      },
+      "token_lengths": {
+        "n": 28753,
+        "sum": 5162966,
+        "mean": 179.6,
+        "p50": 122,
+        "p90": 400,
+        "max": 915
+      },
+      "over_budget": 0,
+      "prompt_samples": [
+        {
+          "id": "cmb_train:2820",
+          "source": "cmb_exam_multi",
+          "lang": "zh",
+          "tokens": 195,
+          "prompt": "<|im_start|>user\nState:\n医师考试；规培结业；全科医学科\nQuestion: 患者，女性，22岁。未婚处女，13岁月经初潮，周期基本规律。近半年来月经期延长，淋漓不尽。肛门指诊：子宫右侧可触及与子宫相连的囊实性不活动肿块，直径约7cm，轻度压痛，未触及痛性结节。本病例最可能的诊断是\nOptions:\n(A) A: 多囊卵巢综合征\n(B) B: 卵巢浆液性囊腺瘤\n(C) C: 卵巢黏液性囊腺瘤\n(D) D: 卵巢畸胎瘤\n(E) E: 原发性痛经\n(F) F: 子宫内膜异位症\n\n请逐步推理，最后一行只输出所有正确选项的字母，格式为：Answer: AC（只写字母，不要输出其他内容）。<|im_end|>\n<|im_start|>assistant\n<think>\n"
+        },
+        {
+          "id": "cmb_train:266439",
+          "source": "cmb_exam_multi",
+          "lang": "zh",
+          "tokens": 107,
+          "prompt": "<|im_start|>user\nState:\n医学考研；中医综合；考研中医综合\nQuestion: 既能止咳化痰，又能润肠通便的药物是\nOptions:\n(A) A: 苏子\n(B) B: 苦杏仁\n(C) C: 桔梗\n(D) D: 罗汉果\n(E) E: \n\n请逐步推理，最后一行只输出所有正确选项的字母，格式为：Answer: AC（只写字母，不要输出其他内容）。<|im_end|>\n<|im_start|>assistant\n<think>\n"
+        },
+        {
+          "id": "cmb_train:112642",
+          "source": "cmb_exam_multi",
+          "lang": "zh",
+          "tokens": 122,
+          "prompt": "<|im_start|>user\nState:\n医师考试；高级职称；妇产科学副主任、主任医师职称考试\nQuestion: 妊娠剧吐的并发症有\nOptions:\n(A) A: 视网膜出血\n(B) B: 电解质紊乱代谢性酸中毒\n(C) C: 胎儿畸形\n(D) D: 韦尼克（Wernicke）脑病\n(E) E: 心搏骤停\n\n请逐步推理，最后一行只输出所有正确选项的字母，格式为：Answer: AC（只写字母，不要输出其他内容）。<|im_end|>\n<|im_start|>assistant\n<think>\n"
+        }
+      ]
+    },
+    "data/multiselect/dev.jsonl": {
+      "rows": 2040,
+      "invalid_rows": [],
+      "invalid_row_count": 0,
+      "by_source": {
+        "cmb_exam_multi": {
+          "n": 1708,
+          "sum": 212240,
+          "mean": 124.3,
+          "p50": 118,
+          "p90": 147,
+          "max": 399
+        },
+        "multirc": {
+          "n": 332,
+          "sum": 152160,
+          "mean": 458.3,
+          "p50": 447,
+          "p90": 650,
+          "max": 879
+        }
+      },
+      "token_lengths": {
+        "n": 2040,
+        "sum": 364400,
+        "mean": 178.6,
+        "p50": 121,
+        "p90": 399,
+        "max": 879
+      },
+      "over_budget": 0,
+      "prompt_samples": [
+        {
+          "id": "cmb_train:250769",
+          "source": "cmb_exam_multi",
+          "lang": "zh",
+          "tokens": 122,
+          "prompt": "<|im_start|>user\nState:\n专业知识考试；中医学与中药学；金匮要略讲义\nQuestion: 狐惑病的内服方有\nOptions:\n(A) A: 甘草泻心汤\n(B) B: 苦参汤\n(C) C: 赤豆当归散\n(D) D: 雄黄熏法\n(E) E: 升麻鳖甲汤\n\n请逐步推理，最后一行只输出所有正确选项的字母，格式为：Answer: AC（只写字母，不要输出其他内容）。<|im_end|>\n<|im_start|>assistant\n<think>\n"
+        },
+        {
+          "id": "cmb_train:140344",
+          "source": "cmb_exam_multi",
+          "lang": "zh",
+          "tokens": 147,
+          "prompt": "<|im_start|>user\nState:\n药师考试；执业西药师；执业西药师\nQuestion: 莨菪类药物结构与中枢作用的关系是\nOptions:\n(A) A: 6，7位环氧使中枢作用增加\n(B) B: 6.7位无取代使中枢作用减弱\n(C) C: 6位羟基取代使中枢作用更弱\n(D) D: α-位有羟基亦可降低中枢作用\n(E) E: 山莨菪碱的中枢作用最低\n\n请逐步推理，最后一行只输出所有正确选项的字母，格式为：Answer: AC（只写字母，不要输出其他内容）。<|im_end|>\n<|im_start|>assistant\n<think>\n"
+        },
+        {
+          "id": "cmb_train:258371",
+          "source": "cmb_exam_multi",
+          "lang": "zh",
+          "tokens": 122,
+          "prompt": "<|im_start|>user\nState:\n医学考研；西医综合；考研西医综合\nQuestion: 下列NHL的病理类型中，哪些属于中度恶性?\nOptions:\n(A) A: 小无裂细胞性\n(B) B: 弥漫性小裂细胞性\n(C) C: 原始免疫细胞性\n(D) D: 弥漫性大细胞性\n(E) E: \n\n请逐步推理，最后一行只输出所有正确选项的字母，格式为：Answer: AC（只写字母，不要输出其他内容）。<|im_end|>\n<|im_start|>assistant\n<think>\n"
+        }
+      ]
+    }
+  },
+  "checked_at": "2026-10-21T14:57:26"
+}
