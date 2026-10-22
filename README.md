@@ -6,11 +6,35 @@ recipe (answer-slot last-token readout over the 255 single-token option labels),
 but replaces SII's single-label softmax with **independent per-option sigmoid +
 BCE**, because a question can have several correct options.
 
-The repository also contains the **self-teacher** pipeline that distils the same
-model's thinking chains back into a single no-thinking forward pass, and its
-pilot logs.
+The repository also contains a **multi-view self-teacher** pipeline and an
+experimental `--objective set` model. Its teacher targets contain both candidate
+membership and answer-count distributions. A small count head and exact dynamic
+programming keep training and one-pass inference probabilistically consistent.
+This new method has **no trained-model result yet**.
 
-## Task and data
+## New implementation: membership and cardinality distillation
+
+See [the method, mathematics, prior-work audit and runnable recipe](docs/multiteacher_set_distillation.md).
+
+- `sii_style_teacher.py`: candidate-conditioned Yes/No readout, direct/verify
+  views, checked token IDs, provenance, explicit truncation policy and null
+  targets on failure. Raw/centered label transforms are diagnostics only.
+- `build_multiteacher_targets.py`: condition each chain on the task protocol,
+  then mix fixed teacher weights; produce coherent membership and count targets.
+- `set_distillation.py` and `train_multiselect.py --objective set`: hard or soft
+  set CE, separately learned count head, exact marginals and set-MAP decoding.
+- `multiselect_to_unified.py`: passage/group-separated MultiRC splits; optional
+  native single-choice plus multi-select CMB data using `--cmb-question-mode mixed`.
+- `eval_multiselect.py`: frozen test evaluation, source/mode/count metrics,
+  structured checkpoint support, and separately labeled oracle diagnostics.
+
+The default trainer remains BCE. New data/output directories are required; the
+archival datasets, pilot outputs and reported run below have not been rewritten.
+Standard-library mathematical/contract tests run without model dependencies;
+PyTorch tests explicitly skip if PyTorch is absent. Real-model forward,
+FSDP export/reload and GPU training still need verification in the native runtime.
+
+## Archived v1 task and data
 
 Two multi-answer sources are unified into one JSONL schema
 (`id/source/lang/split/state/question/options/target/n_options/gold_letters`):
@@ -26,8 +50,10 @@ Two multi-answer sources are unified into one JSONL schema
 - Gold positives per question: 1–10 (mode 3); 308 questions have 2 options.
 - Dropped during conversion: 290 unparseable gold answers, 25 MultiRC rows with
   no positive candidate, 5 with too few candidates.
-- Splits do not overlap (`train/dev`, `train/test`, `dev/test` = 0 exact hits).
-  `dev` is an internal holdout, not the official CMB/MultiRC dev split.
+- The old summary reports zero question/prefix-key overlap. That audit did not
+  ensure MultiRC passage isolation, so it is insufficient evidence of leakage-free
+  evaluation. New experiments must use the corrected group split and full-content
+  audit. `dev` is an internal holdout, not the official CMB/MultiRC dev split.
 
 The file `data/multiselect/summary.json` contains the full statistics.
 
@@ -51,9 +77,11 @@ The file `data/multiselect/summary.json` contains the full statistics.
    lr 2e-6, global batch 64, 1 epoch = 450 steps, 8×H100.
 
 `harness/multiselect_to_unified.py` builds the data from the raw CMB and MultiRC
-files.
+files. With `--objective set`, the trainer instead uses
+`[-sum_m rho_T[m] log rho_model[m] - dot(q_T,s) + sum_m rho_T[m] log Z_m(s)] / K`.
+The complete derivation and baseline controls are in the linked method document.
 
-## Result: gold-supervised multi-hot BCE
+## Archived result: gold-supervised multi-hot BCE
 
 Run `runs/qz/ms_gold/v1`, selected checkpoint 405/450 by dev question EM
 (dev = 2,040 questions, 10,332 candidates, threshold 0.5).
@@ -75,6 +103,8 @@ included.
 
 **No test-set metrics are reported yet.** No baseline (random / majority set /
 SII single-label softmax) has been run on this unified dataset.
+The 58.63% dev EM above is not a result of the new set objective or multi-teacher
+distillation, and must not be directly compared with a rebuilt split.
 
 ## Self-teacher
 
@@ -97,7 +127,7 @@ Reasoning almost always hits the token cap before emitting `</think>` and the
 answer line. The 300-row pilot with a 4,096 cap still only reached 29.8% valid
 chains.
 
-### Attempt 2: SII answer-slot readout (`harness/sii_style_teacher.py`)
+### Archived attempt 2: label-logit teacher readout
 
 No answer text is parsed. Phase A samples thinking chains with vLLM, stopping at
 `</think>`. Phase B appends the reasoning to the answer cue and performs the SII
@@ -116,19 +146,21 @@ Pilot result (300 questions × 2 chains = 600 chains, 1×H100, max 1,024 tokens,
 | mean q on gold-negative options | 0.0191 |
 | exact set agreement at q ≥ 0.5 | 0.0 |
 
-Two issues are visible and are the current work items:
+Two issues invalidate these values as unmodified multi-label membership targets:
 
 1. `centered_sigmoid` subtracts the log-sum-exp over all 255 labels, so `q` is
    capped at 0.5. A 0.5 threshold therefore predicts the empty set for every
-   question. The threshold must be calibrated on dev (or `q` recalibrated).
+   question. Changing a threshold does not establish correct membership semantics.
 2. Raw sigmoid (`q_transform=sigmoid`) saturates at 1.0 for every option on the
-   base head, so its chain variance is identically zero. Variance must be
-   computed from `per_chain_centered` / `per_chain_softmax`, not raw sigmoid.
+   base head, so its chain variance is identically zero. This diagnostic does not
+   invalidate the separately trained gold-BCE student, which can learn a sigmoid
+   decision boundary; it invalidates treating untrained head logits as targets.
 
-Planned: 8 chains per question (full train+dev ≈ 246k chains ≈ 238M completion
-tokens, ~1.5–2 h on 8×H100), plus per-option variance and pairwise chain
-Jaccard in the merged summary. Chains from the same prompt are correlated, so
-the variance is an agreement signal, not a calibrated epistemic uncertainty.
+The current implementation replaces this default with a candidate-specific binary
+readout and excludes truncated chains by default. Begin with two views × two
+chains on a bounded pilot; assess teacher quality and coverage before full runs.
+No new GPU cost or speed estimate has been measured. Correlated teacher views
+are not independent evidence, and disagreement is not calibrated uncertainty.
 
 ## Repository layout
 
@@ -178,21 +210,26 @@ torchrun --standalone --nnodes 1 --nproc_per_node 8 harness/train_multiselect.py
   --eval-every-frac 0.1 --lambda-g 0 --graph none --seed 43
 ```
 
-Self-teacher (K chains, then readout):
+Self-teacher (one view, finite pilot; use a frozen gold checkpoint):
 
 ```bash
-REASONING=1 READOUT=1 SHARDS=8 SAMPLES=8 MAX_TOKENS=1024 \
-MAX_MODEL_LEN=8192 Q_TRANSFORM=centered_sigmoid \
-DATA_DIR=data/multiselect RUN_ROOT=runs/sii_style_teacher \
+MODEL=/path/to/frozen-gold-checkpoint CHECKPOINT_ID=gold-grouped-seed43 \
+TEACHER_ID=direct TEACHER_VIEW=direct \
+REASONING=1 READOUT=1 SHARDS=1 SAMPLES=2 LIMIT=200 MAX_TOKENS=4096 \
+MAX_MODEL_LEN=16384 READOUT_MAX_INPUT_TOKENS=16384 Q_TRANSFORM=membership \
+TRUNCATED_POLICY=exclude DATA_DIR=data/multiselect_grouped_mixed \
+RUN_ROOT=runs/sii_style_teacher_pilot \
 bash harness/run_sii_style_teacher.sh
 ```
 
 ## Notes and caveats
 
-- The base-model label logits are all positive, so raw per-candidate sigmoid
-  saturates; use `centered_sigmoid` or `softmax` and check `q_value_stats`.
-- `dev` is carved from the train pools, not an official split. CMB and MultiRC
-  upstream splits may have near-duplicates that this conversion does not detect.
+- Default teacher targets now use `membership` (candidate-conditioned Yes/No).
+  `centered_sigmoid`, `sigmoid` and `softmax` teacher transforms are diagnostic
+  outputs and are rejected by the coherent target builder.
+- `dev` is carved from train pools. Corrected grouping checks exact normalized
+  full passages/questions and paragraph identities; it does not detect all
+  semantic near-duplicates or base-model pretraining contamination.
 - The self-teacher here is **the same model**, not a stronger teacher. It matches
   the model's own thinking-conditioned decision, not a gold label.
 - The teacher generations in `data/multiselect_pilot/` and the pilot runs are
@@ -209,3 +246,4 @@ bash harness/run_sii_style_teacher.sh
 - The SII-vs-StartLux comparison documents refer to
   [Startlux-Decision](https://github.com/StartLuxLabs/Startlux-Decision); no
   StartLux code or weights are included here.
+

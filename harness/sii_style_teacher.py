@@ -1,73 +1,53 @@
 #!/usr/bin/env python3
-"""SII-style self-teacher: thinking chains + SII answer-slot readout.
+"""Reasoning-chain teacher with candidate-conditioned Yes/No membership readout.
 
-This replaces free-form ``Answer: AC`` parsing with the SII decision readout used
-by ``innerjev/sii_decision`` (prompts.py / infer.py / learning.py):
+Phase A (``generate``) samples finite reasoning chains with vLLM. The ``direct``
+and ``verify`` views use different instructions, retain the full question and all
+options, and never include gold answers or the gold answer count. Every cache row
+records its view, checkpoint identity, input digest, chain digest, and finish state.
 
-  Phase A (``generate``, vLLM)
-    body      = ``prompts.body(row, labels)``: State/Question/Options with
-                ``(<label i>) <option key>: <description>`` lines.
-    prefix    = chat template of the user turn, ``add_generation_prompt=True``,
-                ``enable_thinking=True`` (ends with ``<|im_start|>assistant\\n<think>\\n``).
-    Sample ``--samples`` chains with vLLM, ``max_tokens`` tokens,
-    ``stop=["</think>"]``.  The reasoning is the generated text with chat control
-    tokens stripped and, when present, everything after ``</think>`` dropped.
-    Truncated reasoning is kept: the readout still works.
-    One JSONL row per (id, chain):
-      {"id","chain","reasoning","finish_reason","prompt_tokens",
-       "completion_tokens","source","lang"}.
+Phase B (``readout``) builds one full-context prompt per chain and candidate. It
+names the candidate and asks whether that candidate belongs in the correct answer
+set. The tokenizer must map the explicit Yes/No spellings to two distinct single
+tokens, including at the actual answer boundary. Only those two output-head rows
+are projected. ``q_i = softmax([yes_logit, no_logit])[0]`` is averaged across
+complete valid chain vectors; no sampled answer string is parsed.
 
-  Phase B (``readout``, transformers)
-    read_prompt = think_prefix + reasoning + "\\n</think>\\n\\n" + ANSWER_CUE
-    where ANSWER_CUE = "The correct answer is (".
-    With empty reasoning this is byte-identical to SII's
-    ``prompts.prompt(..., enable_thinking=False)`` (the template then emits the
-    empty ``<think>\\n\\n</think>\\n\\n`` block).  One forward pass; the hidden
-    state at the last non-pad token feeds the output head; logits are gathered
-    for SII's 255 single-token option labels and cut to the first K.
+The old ``sigmoid``, ``centered_sigmoid`` and ``softmax`` label-slot transforms are
+available only as explicitly marked diagnostics. Centering label logits by their
+logsumexp gives ``a_i/(1+a_i)`` for a label softmax probability ``a_i``; it does not
+produce candidate membership events. Diagnostic q values are not soft targets.
 
-    Single-choice SII takes ``softmax(logits[:K])``.  Multi-select targets do not
-    form a simplex, so the teacher uses the per-candidate sigmoid
-    ``q_chain = sigmoid(logits[:K])`` and averages q over the chains
-    (``--q-transform softmax`` switches q to SII's exact readout).  Softmax is
-    always recorded per chain for comparison.  No answer text is parsed.
+Output preserves the older q fields and adds ``per_chain_membership``, aligned
+``per_chain_ids``/``per_chain_metadata``, separate excluded-chain metadata,
+``option_keys``, ``q_semantics``, teacher/readout identity, and provenance. Each
+membership vector contains marginal readouts; it is not an empirically measured
+joint set distribution. Truncated chains follow ``--truncated-policy`` and remain
+visible in coverage. An absent/invalid candidate invalidates the whole chain;
+rows without any valid chain have ``q: null``, never fabricated negatives.
 
-    Calibration warning: on the *base* Qwen3.5-4B head the label logits are all
-    positive (CPU smoke: 0.07..24) so the raw sigmoid saturates near 1.0 for
-    every option; ``q_value_stats`` and ``per_chain_softmax`` expose this.
+The native modes are generate, readout, merge-reasoning, merge-readout,
+validate-only (tokenizer/prompts; no model forward), and check-model. For example:
 
-    One JSONL row per input id:
-      {"id","source","lang","n_options","n_chains","valid_chains","q",
-       "q_transform","per_chain_probs","per_chain_softmax",
-       "per_chain_finish_reasons"}
+  python -I harness/sii_style_teacher.py readout --model /path/to/Qwen3.5-4B \
+      --teacher-id qwen-base --teacher-view direct --q-transform membership \
+      --input data/multiselect_pilot/train.jsonl \
+      --reasoning runs/teacher/direct/reasoning/train.jsonl \
+      --output runs/teacher/direct/q/membership/exclude/parts/train/part-00000.jsonl \
+      --samples 2 --readout-batch-size 4 --truncated-policy exclude
 
-Modes
-  generate           phase A, one process per visible GPU and data shard
-  readout            phase B, one process per visible GPU and data shard
-  merge-reasoning    merge phase-A parts per split into <split>.jsonl
-  merge-readout      merge phase-B parts, write sii_teacher_<split>.jsonl + summary
-  --validate-only    CPU: render/compare prompts, check labels, report lengths
-  --check-model      verify all safetensors shards are present
-
-Examples
-  python -I sii_style_teacher.py --validate-only --model ../models/Qwen3.5-4B \
-      --input ../data/multiselect/dev.jsonl --report ../logs/cpu_checks/sii_teacher_validate.json
-
-  CUDA_VISIBLE_DEVICES=3 python -I sii_style_teacher.py generate \
-      --model ../models/Qwen3.5-4B --input ../data/multiselect/train.jsonl \
-      --output ../runs/qz/sii_style_teacher/reasoning/parts/train/part-00003.jsonl \
-      --shard 3 --shards 8 --samples 2 --max-tokens 1024 --max-model-len 8192 --resume
-
-  CUDA_VISIBLE_DEVICES=3 ../.venv-sii/bin/python -I sii_style_teacher.py readout \
-      --model ../models/Qwen3.5-4B --input ../data/multiselect/train.jsonl \
-      --reasoning ../runs/qz/sii_style_teacher/reasoning/train.jsonl \
-      --output ../runs/qz/sii_style_teacher/q/parts/train/part-00003.jsonl \
-      --shard 3 --shards 8 --samples 2 --batch-size 4 --resume
+``harness/run_sii_style_teacher.sh`` defaults to two chains and one pilot shard;
+``DRY_RUN=1`` prints commands without launching generation or readout. Outputs are
+isolated by teacher view, q transform and truncation policy. An optional explicit
+``--checkpoint-id`` records an immutable revision supplied by the operator; the
+default local model path is identified as a path, not a verified weight hash.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import statistics
 import string
@@ -77,10 +57,29 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Native CLI invocations use python -I, which omits the script directory.
+HARNESS_DIR = str(Path(__file__).resolve().parent)
+if HARNESS_DIR not in sys.path:
+    sys.path.insert(0, HARNESS_DIR)
+from set_distillation import input_digest
+
 DEFAULT_MODEL = ROOT / "models/Qwen3.5-4B"
 DEFAULT_DATA = ROOT / "data/multiselect"
 DEFAULT_RUN_ROOT = ROOT / "runs/qz/sii_style_teacher"
 ANSWER_CUE = "The correct answer is ("
+MEMBERSHIP_ANSWER_CUE = "Membership answer:\n"
+MEMBERSHIP_READOUT = "candidate_yes_no_v1"
+REASONING_PROMPT_VERSION = "candidate_reasoning_v1"
+VIEW_INSTRUCTIONS = {
+    "direct": (
+        "Reason through the question directly. Evaluate every option against the "
+        "given facts and explain which options are supported. Keep the reasoning "
+        "specific to each option and follow the declared selection protocol."),
+    "verify": (
+        "Independently verify every option. Search for a counterexample, a "
+        "contradiction, or an unmet condition for each candidate, then explain "
+        "which candidates survive those checks. Follow the declared selection protocol."),
+}
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 # Chains that never produced reasoning text; phase B skips them when averaging.
@@ -125,9 +124,35 @@ def make_body(row, labels):
             f"Options:\n{choices}").rstrip()
 
 
-def make_think_prefix(tokenizer, row, labels):
+def selection_protocol_text(row):
+    """Use only task protocol, never a gold set or its cardinality."""
+    selection_mode = row.get("selection_mode", "multi")
+    if selection_mode == "single":
+        selection = "Task protocol: exactly one option is correct."
+    elif selection_mode == "multi":
+        selection = "Task protocol: multiple options may be correct."
+    else:
+        raise ValueError(f"{row.get('id')}: invalid selection_mode {selection_mode!r}")
+    if "allow_empty" in row and not isinstance(row["allow_empty"], bool):
+        raise ValueError(f"{row.get('id')}: allow_empty must be boolean")
+    if selection_mode == "single" and row.get("allow_empty", False):
+        raise ValueError(f"{row.get('id')}: single-choice protocol cannot allow an empty set")
+    if row.get("allow_empty", False) is False:
+        selection += " At least one option must be selected."
+    elif row.get("allow_empty") is True and selection_mode != "single":
+        selection += " An empty selection is permitted."
+    return selection
+
+
+def make_think_prefix(tokenizer, row, labels, teacher_view=None):
+    # None retains the old SII formatting for diagnostic prompt comparisons.
+    content = make_body(row, labels)
+    if teacher_view is not None:
+        if teacher_view not in VIEW_INSTRUCTIONS:
+            raise ValueError(f"unknown teacher_view: {teacher_view!r}")
+        content += "\n\n" + selection_protocol_text(row) + "\n" + VIEW_INSTRUCTIONS[teacher_view]
     return tokenizer.apply_chat_template(
-        [{"role": "user", "content": make_body(row, labels)}],
+        [{"role": "user", "content": content}],
         tokenize=False, add_generation_prompt=True, enable_thinking=True)
 
 
@@ -167,6 +192,128 @@ def make_read_prompt(think_prefix, reasoning):
     return think_prefix + reasoning + "\n</think>\n\n" + ANSWER_CUE
 
 
+def binary_token_info(tokenizer, yes_token="Yes", no_token="No"):
+    """Resolve the named binary events from this tokenizer; never assume IDs."""
+    resolved = {}
+    for event, token in (("yes", yes_token), ("no", no_token)):
+        if not isinstance(token, str) or not token or token.strip().lower() != event:
+            raise ValueError(f"{event}_token must explicitly spell {event!r}")
+        ids = tokenizer.encode(token, add_special_tokens=False)
+        if len(ids) != 1 or isinstance(ids[0], bool) or not isinstance(ids[0], int):
+            raise ValueError(f"{event} token {token!r} must encode to one token, got {ids}")
+        resolved[f"{event}_token"] = token
+        resolved[f"{event}_token_id"] = ids[0]
+    if resolved["yes_token_id"] == resolved["no_token_id"]:
+        raise ValueError("yes and no must resolve to distinct token IDs")
+    return resolved
+
+
+def validate_binary_token_boundary(tokenizer, prompt, token_info):
+    """Ensure each answer is one continuation token after the actual cue."""
+    prefix_ids = tokenizer.encode(prompt, add_special_tokens=False)
+    for event in ("yes", "no"):
+        token = token_info[f"{event}_token"]
+        actual = tokenizer.encode(prompt + token, add_special_tokens=False)
+        if actual != prefix_ids + [token_info[f"{event}_token_id"]]:
+            raise ValueError(f"{event} token {token!r} is not a single continuation "
+                             "after the membership answer cue")
+
+
+def make_membership_prompt(tokenizer, row, labels, reasoning, candidate_index,
+                           yes_token="Yes", no_token="No", teacher_view="direct"):
+    """Full context, shared reasoning, and one explicitly named membership event."""
+    if not 0 <= candidate_index < len(row["options"]):
+        raise ValueError("candidate index outside the input option order")
+    if teacher_view not in VIEW_INSTRUCTIONS:
+        raise ValueError(f"unknown teacher_view: {teacher_view!r}")
+    candidate = row["options"][candidate_index]
+    content = (
+        make_body(row, labels) + "\n\n" + selection_protocol_text(row)
+        + f"\n\nReasoning evidence (teacher view: {teacher_view}):\n{reasoning}"
+        + "\n\nCandidate under evaluation:\n"
+        + f"({labels[candidate_index]}) {candidate['key']}: {candidate['desc']}"
+        + "\n\nDoes this specific candidate belong in the correct answer set for "
+        "the question? Consider the full question, all options, and the reasoning "
+        "above. Judge this candidate only. Reply with exactly "
+        + repr(yes_token) + " if it belongs, or " + repr(no_token)
+        + " if it does not belong. Do not output an option label or any explanation.")
+    prefix = tokenizer.apply_chat_template(
+        [{"role": "user", "content": content}], tokenize=False,
+        add_generation_prompt=True, enable_thinking=False)
+    return prefix + MEMBERSHIP_ANSWER_CUE
+
+
+def membership_probability(logits_row):
+    """P(Yes | Yes or No, full context, one candidate), stable to logit offsets."""
+    values = _finite_values(logits_row)
+    if len(values) != 2:
+        raise ValueError("membership readout requires exactly [yes_logit, no_logit]")
+    maximum = max(values)
+    yes, no = [math.exp(value - maximum) for value in values]
+    return yes / (yes + no)
+
+
+def _finite_values(values):
+    values = values.tolist() if hasattr(values, "tolist") else list(values)
+    if not values or any(isinstance(value, bool) or not isinstance(value, (int, float))
+                         or not math.isfinite(value) for value in values):
+        raise ValueError("readout values must be a nonempty finite numeric vector")
+    return [float(value) for value in values]
+
+
+def q_semantics(transform):
+    return "candidate_membership" if transform == "membership" else f"diagnostic_{transform}"
+
+
+def teacher_identity(args):
+    return {
+        "teacher_id": args.teacher_id or f"{Path(args.model).name}:{args.teacher_view}",
+        "teacher_view": args.teacher_view,
+        "checkpoint": args.checkpoint_id or str(Path(args.model).resolve()),
+        "reasoning_prompt_version": REASONING_PROMPT_VERSION,
+    }
+
+
+def input_fingerprint(row):
+    """Compatibility name for the shared teacher/target input identity."""
+    return input_digest(row)
+
+
+def chain_provenance(args, row):
+    return {
+        **teacher_identity(args), "schema_version": 2,
+        "input_sha256": input_fingerprint(row), "input_digest": input_digest(row),
+        "option_keys": [option["key"] for option in row["options"]],
+        "option_alignment": "input_option_order",
+        "generation": {key: getattr(args, key) for key in
+                       ("seed", "temperature", "top_p", "top_k", "max_tokens")},
+    }
+
+
+def _validate_identity(record, expected_identity, row=None, allow_legacy=False):
+    ident = record.get("id", "unknown")
+    legacy = not any(key in record for key in expected_identity)
+    if legacy and allow_legacy:
+        return False
+    for key, expected in expected_identity.items():
+        if record.get(key) != expected:
+            raise ValueError(f"{ident}: cache {key} mismatch: expected {expected!r}, "
+                             f"got {record.get(key)!r}")
+    provenance = record.get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError(f"{ident}: cache provenance missing")
+    if row is not None:
+        expected_digest = input_digest(row)
+        if (provenance.get("input_sha256") != expected_digest
+                or provenance.get("input_digest") != expected_digest
+                or record.get("input_digest") != expected_digest):
+            raise ValueError(f"{ident}: cache input fingerprint mismatch")
+        keys = [option["key"] for option in row["options"]]
+        if record.get("option_keys") != keys:
+            raise ValueError(f"{ident}: cache option_keys mismatch")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # json / atomic io
 # ---------------------------------------------------------------------------
@@ -181,6 +328,14 @@ def read_jsonl(path):
             except json.JSONDecodeError as error:
                 raise ValueError(f"{path}:{line_number}: {error}") from error
     return rows
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def sanitize_jsonl(path):
@@ -253,23 +408,112 @@ class JsonlAppender:
         self.close()
 
 
-def load_done_ids(path):
+def validate_readout_record(record, row=None, expected_identity=None, args=None,
+                            require_q=True):
+    """Fail closed on stale provenance, invalid targets, or broken chain alignment."""
+    ident = record.get("id", "unknown")
+    if expected_identity is not None:
+        _validate_identity(record, expected_identity, row=row)
+    n = record.get("n_options")
+    keys = record.get("option_keys")
+    if not isinstance(n, int) or isinstance(n, bool) or n < 2:
+        raise ValueError(f"{ident}: invalid n_options")
+    if not isinstance(keys, list) or len(keys) != n or len(set(keys)) != n:
+        raise ValueError(f"{ident}: missing or invalid option_keys")
+    if row is not None and keys != [option["key"] for option in row["options"]]:
+        raise ValueError(f"{ident}: option_keys mismatch")
+    transform = record.get("q_transform")
+    if transform not in ("membership", "sigmoid", "centered_sigmoid", "softmax"):
+        raise ValueError(f"{ident}: unknown q_transform")
+    if record.get("q_semantics") != q_semantics(transform):
+        raise ValueError(f"{ident}: q_semantics mismatch")
+    if args is not None:
+        if transform != args.q_transform or record.get("n_chains") != args.samples:
+            raise ValueError(f"{ident}: cached transform or sample count mismatch")
+        provenance = record.get("provenance") or {}
+        if provenance.get("truncated_policy") != args.truncated_policy:
+            raise ValueError(f"{ident}: cached truncated_policy mismatch")
+        if transform == "membership":
+            for key in ("yes_token", "no_token"):
+                if (provenance.get("binary_tokens") or {}).get(key) != getattr(args, key):
+                    raise ValueError(f"{ident}: cached binary {key} mismatch")
+    q = record.get("q")
+    if q is None:
+        if require_q:
+            raise ValueError(f"{ident}: cached q is missing; rerun without --resume")
+        if record.get("valid_chains") != 0:
+            raise ValueError(f"{ident}: null q with nonzero valid_chains")
+        return
+    values = _finite_values(q)
+    if len(values) != n or any(not 0 <= value <= 1 for value in values):
+        raise ValueError(f"{ident}: invalid q probability vector")
+    field = {"membership": "per_chain_membership", "sigmoid": "per_chain_probs",
+             "centered_sigmoid": "per_chain_centered", "softmax": "per_chain_softmax"}[transform]
+    vectors = record.get(field)
+    if not isinstance(vectors, list) or not vectors or len(vectors) != record.get("valid_chains"):
+        raise ValueError(f"{ident}: missing or inconsistent {field}")
+    for vector in vectors:
+        vector = _finite_values(vector)
+        if len(vector) != n or any(not 0 <= value <= 1 for value in vector):
+            raise ValueError(f"{ident}: invalid {field} vector")
+    mean = [sum(column) / len(vectors) for column in zip(*vectors)]
+    if any(abs(value - expected) > 1e-7 for value, expected in zip(values, mean)):
+        raise ValueError(f"{ident}: q differs from the per-chain mean")
+    ids = record.get("per_chain_ids")
+    metadata = record.get("per_chain_metadata")
+    if (not isinstance(ids, list) or len(ids) != len(vectors)
+            or len(set(ids)) != len(ids) or not isinstance(metadata, list)
+            or len(metadata) != len(ids)
+            or any(item.get("chain") != chain or item.get("included") is not True
+                   for chain, item in zip(ids, metadata))):
+        raise ValueError(f"{ident}: invalid per-chain alignment")
+    if transform == "membership" and record.get("readout") != MEMBERSHIP_READOUT:
+        raise ValueError(f"{ident}: invalid membership readout version")
+
+
+def load_done_ids(path, *, expected_identity=None, input_rows=None, args=None,
+                  reasoning_digests=None):
     done = set()
     if not Path(path).exists():
         return done
-    for row in read_jsonl(path):
-        if isinstance(row.get("id"), str):
-            done.add(row["id"])
+    for record in read_jsonl(path):
+        ident = record.get("id")
+        if not isinstance(ident, str) or not ident or ident in done:
+            raise ValueError(f"{path}: invalid or duplicate cached id {ident!r}")
+        if expected_identity is not None:
+            if input_rows is not None and ident not in input_rows:
+                raise ValueError(f"{ident}: cached id absent from input")
+            validate_readout_record(record, row=(input_rows or {}).get(ident),
+                                    expected_identity=expected_identity, args=args)
+            if (reasoning_digests is not None and
+                    record.get("provenance", {}).get("reasoning_cache_sha256") != reasoning_digests):
+                raise ValueError(f"{ident}: cached readout uses different reasoning content")
+        done.add(ident)
     return done
 
 
-def load_done_chains(path):
+def load_done_chains(path, *, expected_identity=None, input_rows=None, args=None):
     done = set()
     if not Path(path).exists():
         return done
-    for row in read_jsonl(path):
-        if isinstance(row.get("id"), str) and isinstance(row.get("chain"), int):
-            done.add((row["id"], row["chain"]))
+    for record in read_jsonl(path):
+        ident, chain = record.get("id"), record.get("chain")
+        if not isinstance(ident, str) or not ident or type(chain) is not int or chain < 0:
+            raise ValueError(f"{path}: invalid cached reasoning id/chain")
+        if (ident, chain) in done:
+            raise ValueError(f"{ident}: duplicate cached chain {chain}")
+        if expected_identity is not None:
+            if input_rows is not None and ident not in input_rows:
+                raise ValueError(f"{ident}: cached reasoning id absent from input")
+            _validate_identity(record, expected_identity, row=(input_rows or {}).get(ident))
+            if args is not None:
+                generation = (record.get("provenance") or {}).get("generation", {})
+                for key in ("seed", "temperature", "top_p", "top_k", "max_tokens"):
+                    if generation.get(key) != getattr(args, key):
+                        raise ValueError(f"{ident}: cached generation {key} mismatch")
+                if chain >= args.samples:
+                    raise ValueError(f"{ident}: cached chain exceeds --samples")
+        done.add((ident, chain))
     return done
 
 
@@ -298,6 +542,7 @@ def validate_row(row):
         keys.append(key)
     if len(set(keys)) != len(keys):
         raise ValueError(f"{ident}: duplicate option keys")
+    selection_protocol_text(row)
     return row
 
 
@@ -350,8 +595,11 @@ def build_engine(args):
 
 def _generate_with_retry(llm, prompts, sampling):
     try:
-        return llm.generate(prompts, sampling, use_tqdm=False,
-                            tokenization_kwargs={"add_special_tokens": False})
+        outputs = llm.generate(prompts, sampling, use_tqdm=False,
+                               tokenization_kwargs={"add_special_tokens": False})
+        if len(outputs) != len(prompts):
+            raise ValueError("generation engine returned fewer or extra prompt results")
+        return outputs
     except Exception as error:  # noqa: BLE001 - vLLM raises many engine types
         if len(prompts) > 1:
             middle = len(prompts) // 2
@@ -363,8 +611,8 @@ def _generate_with_retry(llm, prompts, sampling):
 
 
 def chain_record(row, chain, reasoning, finish_reason, prompt_tokens,
-                 completion_tokens):
-    return {
+                 completion_tokens, *, provenance=None):
+    record = {
         "id": row["id"],
         "chain": chain,
         "reasoning": reasoning,
@@ -373,13 +621,26 @@ def chain_record(row, chain, reasoning, finish_reason, prompt_tokens,
         "completion_tokens": completion_tokens,
         "source": row.get("source"),
         "lang": row.get("lang"),
+        "truncated": finish_reason == "length",
     }
+    if provenance is not None:
+        record.update({key: provenance[key] for key in
+                       ("teacher_id", "teacher_view", "checkpoint", "reasoning_prompt_version")})
+        record["option_keys"] = provenance["option_keys"]
+        record["input_digest"] = provenance["input_digest"]
+        record["provenance"] = dict(provenance)
+        record["reasoning_sha256"] = hashlib.sha256(reasoning.encode("utf-8")).hexdigest()
+    return record
 
 
 def generate_split(llm, sampling, tokenizer, labels, args, input_path, output_path):
     rows = read_jsonl(input_path)
+    seen_ids = set()
     for row in rows:
         validate_row(row)
+        if row["id"] in seen_ids:
+            raise ValueError(f"duplicate input id {row['id']!r}")
+        seen_ids.add(row["id"])
         if len(row["options"]) > len(labels):
             raise ValueError(f"{row['id']}: more options than SII labels")
     if args.limit:
@@ -395,7 +656,8 @@ def generate_split(llm, sampling, tokenizer, labels, args, input_path, output_pa
     done = set()
     if args.resume:
         sanitize_jsonl(output_path)
-        done = load_done_chains(output_path)
+        done = load_done_chains(output_path, expected_identity=teacher_identity(args),
+                                input_rows={row["id"]: row for row in rows}, args=args)
     if done:
         selected = [(index, row) for index, row in selected
                     if any((row["id"], chain) not in done
@@ -405,6 +667,7 @@ def generate_split(llm, sampling, tokenizer, labels, args, input_path, output_pa
 
     profile = {
         "phase": "reasoning",
+        **teacher_identity(args),
         "input": str(input_path), "output": str(output_path),
         "model": str(args.model), "shard": args.shard, "shards": args.shards,
         "samples": args.samples, "max_tokens": args.max_tokens,
@@ -422,7 +685,8 @@ def generate_split(llm, sampling, tokenizer, labels, args, input_path, output_pa
         log(f"[{input_path.name} shard {args.shard}] nothing left to do")
         return profile
 
-    prompts = [make_think_prefix(tokenizer, row, labels) for _, row in selected]
+    prompts = [make_think_prefix(tokenizer, row, labels, teacher_view=args.teacher_view)
+               for _, row in selected]
     lengths = [len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
                for prompt in prompts]
     budget = args.max_model_len - args.max_tokens
@@ -443,7 +707,8 @@ def generate_split(llm, sampling, tokenizer, labels, args, input_path, output_pa
     chains_written = 0
     with JsonlAppender(output_path, resume=args.resume and output_path.exists()) as out:
         for row, length, needed in over_budget:
-            out.append([chain_record(row, chain, "", "prompt_too_long", length, 0)
+            out.append([chain_record(row, chain, "", "prompt_too_long", length, 0,
+                                     provenance=chain_provenance(args, row))
                         for chain in needed])
             chains_written += len(needed)
             profile["errors"] += len(needed)
@@ -458,14 +723,16 @@ def generate_split(llm, sampling, tokenizer, labels, args, input_path, output_pa
                 profile["prompt_tokens"] += length
                 if request_output is None:
                     for chain in needed:
-                        records.append(chain_record(row, chain, "", "error", length, 0))
+                        records.append(chain_record(row, chain, "", "error", length, 0,
+                                                     provenance=chain_provenance(args, row)))
                     profile["errors"] += len(needed)
                     chains_written += len(needed)
                     continue
                 completions = list(getattr(request_output, "outputs", None) or [])
                 for chain in needed:
                     if chain >= len(completions):
-                        records.append(chain_record(row, chain, "", "missing", length, 0))
+                        records.append(chain_record(row, chain, "", "missing", length, 0,
+                                                     provenance=chain_provenance(args, row)))
                         profile["errors"] += 1
                         chains_written += 1
                         continue
@@ -475,7 +742,7 @@ def generate_split(llm, sampling, tokenizer, labels, args, input_path, output_pa
                     tokens = len(token_ids) if token_ids is not None else 0
                     records.append(chain_record(
                         row, chain, extract_reasoning(completion.text or ""),
-                        finish, length, tokens))
+                        finish, length, tokens, provenance=chain_provenance(args, row)))
                     profile["truncated"] += 1 if finish == "length" else 0
                     profile["errors"] += 1 if finish in ("error", "abort") else 0
                     profile["completion_tokens"] += tokens
@@ -528,7 +795,9 @@ def run_generate(args):
             rows = rows[: args.limit]
         if args.resume:
             sanitize_jsonl(output_path)
-        done = load_done_chains(output_path) if args.resume else set()
+        done = (load_done_chains(output_path, expected_identity=teacher_identity(args),
+                                 input_rows={row["id"]: row for row in rows}, args=args)
+                if args.resume else set())
         shard_rows = [row for index, row in enumerate(rows)
                       if index % args.shards == args.shard]
         pending.append(any((row["id"], chain) not in done
@@ -561,9 +830,10 @@ def run_generate(args):
 # phase B: transformers SII readout
 # ---------------------------------------------------------------------------
 class ReadoutEngine:
-    """SII readout: last-slot hidden state -> label-token logits."""
+    """Last-slot hidden state -> explicitly selected output-token logits."""
 
-    def __init__(self, model_path, device="cuda", gpu_index=0, max_input_tokens=8192):
+    def __init__(self, model_path, device="cuda", gpu_index=0, max_input_tokens=8192,
+                 q_transform="membership", yes_token="Yes", no_token="No"):
         import torch
         from transformers import AutoConfig, AutoTokenizer
         from transformers import Qwen3_5ForConditionalGeneration, Qwen3_5ForCausalLM
@@ -573,8 +843,12 @@ class ReadoutEngine:
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         self.tokenizer.padding_side = "right"
         self.labels = option_labels(self.tokenizer)
+        self.q_transform = q_transform
+        self.binary_tokens = binary_token_info(self.tokenizer, yes_token, no_token)
         self.label_ids_cpu = [self.tokenizer.encode(label, add_special_tokens=False)[0]
-                              for label in self.labels]
+                             for label in self.labels]
+        output_ids = ([self.binary_tokens["yes_token_id"], self.binary_tokens["no_token_id"]]
+                      if q_transform == "membership" else self.label_ids_cpu)
 
         config = AutoConfig.from_pretrained(model_path)
         cls = (Qwen3_5ForConditionalGeneration if config.model_type == "qwen3_5"
@@ -595,11 +869,17 @@ class ReadoutEngine:
         self.backbone = getattr(model.model, "language_model", model.model)
         self.head = model.get_output_embeddings()
         self.input_device = model.get_input_embeddings().weight.device
-        self.label_ids = torch.tensor(self.label_ids_cpu, device=self.head.weight.device)
+        self.output_ids = torch.tensor(output_ids, device=self.head.weight.device)
+        # Qwen's output head is linear: project only the two requested events
+        # (or the 255 labels for legacy diagnostics), not the entire vocabulary.
+        self.readout_weight = self.head.weight.index_select(0, self.output_ids).detach()
+        head_bias = getattr(self.head, "bias", None)
+        self.readout_bias = (head_bias.index_select(0, self.output_ids).detach()
+                             if head_bias is not None else None)
         self.device = device
 
     def logits(self, prompts):
-        """Return a CPU float tensor [B, 255] of label-token logits."""
+        """Return [B, 2] in [Yes, No] order, or legacy [B, 255] logits."""
         torch = self.torch
         encoded = self.tokenizer(prompts, padding=True, return_tensors="pt",
                                  add_special_tokens=False)
@@ -615,203 +895,307 @@ class ReadoutEngine:
             end = (lengths - 1).to(hidden.device)
             slot = hidden[torch.arange(len(prompts), device=hidden.device), end]
             slot = slot.to(self.head.weight.device)
-            logits = self.head(slot).float().index_select(-1, self.label_ids)
+            logits = torch.nn.functional.linear(
+                slot, self.readout_weight, self.readout_bias).float()
         return logits.cpu()
 
 
 def chain_probabilities(logits_row, n_options):
-    """(sigmoid, centered_sigmoid, softmax) of the first K label logits.
+    """Legacy diagnostics only; none is a candidate membership probability.
 
-    centered_sigmoid subtracts the log-sum-exp over all 255 label tokens before
-    the per-candidate sigmoid. Raw sigmoid saturates on an untrained base head
-    (all label logits are high); centering keeps per-candidate independence
-    without forcing the K options onto a simplex.
+    If a_i is the label softmax probability over all labels, the centered
+    transform is a_i / (1 + a_i), so even the sum over all labels is below one.
+    Subtracting logsumexp does not turn label evidence into independent events.
     """
-    import torch
-    full = logits_row.float()
+    full = _finite_values(logits_row)
+    if not 0 < n_options <= len(full):
+        raise ValueError("not enough label logits for the requested options")
     values = full[:n_options]
-    lse = torch.logsumexp(full, -1)
-    return (torch.sigmoid(values).tolist(),
-            torch.sigmoid(values - lse).tolist(),
-            torch.softmax(values, -1).tolist())
+    maximum = max(full)
+    lse = maximum + math.log(sum(math.exp(value - maximum) for value in full))
+    def sigmoid(value):
+        if value >= 0:
+            return 1.0 / (1.0 + math.exp(-value))
+        exp_value = math.exp(value)
+        return exp_value / (1.0 + exp_value)
+    exps = [math.exp(value - max(values)) for value in values]
+    return ([sigmoid(value) for value in values],
+            [sigmoid(value - lse) for value in values],
+            [value / sum(exps) for value in exps])
 
 
 def _readout_with_retry(engine, prompts):
-    """Split a failed forward batch down to single prompts; None on failure."""
+    """Preserve prompt positions when splitting failures; one None per failure."""
+    if not prompts:
+        return []
     try:
-        return engine.logits(prompts)
+        values = engine.logits(prompts)
+        values = values.tolist() if hasattr(values, "tolist") else list(values)
+        if len(values) != len(prompts):
+            raise ValueError("engine returned a different number of logits than prompts")
+        return values
     except Exception as error:  # noqa: BLE001 - keep the shard alive
         if len(prompts) > 1:
-            import torch
             middle = len(prompts) // 2
             log(f"[warn] readout batch of {len(prompts)} failed ({error}); splitting")
             left = _readout_with_retry(engine, prompts[:middle])
             right = _readout_with_retry(engine, prompts[middle:])
-            if left is None or right is None:
-                return None
-            return torch.cat([left, right], dim=0)
+            return left + right
         log(f"[error] readout prompt failed: {error}")
-        return None
+        return [None]
 
 
-def load_reasoning_by_id(paths, wanted_ids):
+def load_reasoning_by_id(paths, wanted_ids, *, expected_identity=None,
+                         input_rows=None, samples=None, allow_legacy=False):
     grouped = defaultdict(list)
+    seen = set()
     for path in paths:
         for row in read_jsonl(path):
             ident = row.get("id")
-            if ident in wanted_ids and isinstance(row.get("chain"), int):
-                grouped[ident].append(row)
+            if ident not in wanted_ids:
+                continue
+            chain = row.get("chain")
+            if type(chain) is not int or chain < 0 or (samples is not None and chain >= samples):
+                raise ValueError(f"{ident}: cached chain outside requested sample range")
+            if (ident, chain) in seen:
+                raise ValueError(f"{ident}: duplicate cached reasoning chain {chain}")
+            seen.add((ident, chain))
+            if not isinstance(row.get("reasoning"), str):
+                raise ValueError(f"{ident}: cached reasoning must be text")
+            if expected_identity is not None:
+                verified = _validate_identity(row, expected_identity,
+                                               row=(input_rows or {}).get(ident),
+                                               allow_legacy=allow_legacy)
+                if verified and row.get("reasoning_sha256") != hashlib.sha256(
+                        row["reasoning"].encode("utf-8")).hexdigest():
+                    raise ValueError(f"{ident}: cached reasoning digest mismatch")
+            if ("truncated" in row and (not isinstance(row["truncated"], bool)
+                    or row["truncated"] != (row.get("finish_reason") == "length"))):
+                raise ValueError(f"{ident}: inconsistent truncated flag")
+            grouped[ident].append(row)
     for entries in grouped.values():
         entries.sort(key=lambda entry: entry["chain"])
     return grouped
 
 
+def _chain_metadata(entry, included, exclusion_reason=None):
+    metadata = {
+        "chain": entry["chain"], "finish_reason": entry.get("finish_reason"),
+        "truncated": entry.get("truncated", entry.get("finish_reason") == "length"),
+        "included": included, "prompt_tokens": entry.get("prompt_tokens"),
+        "completion_tokens": entry.get("completion_tokens"),
+        "reasoning_sha256": entry.get("reasoning_sha256"),
+        "generation": (entry.get("provenance") or {}).get("generation"),
+    }
+    if exclusion_reason is not None:
+        metadata["exclusion_reason"] = exclusion_reason
+    return metadata
+
+
 def readout_split(engine, tokenizer, labels, args, input_path, reasoning_paths,
                   output_path):
     rows = read_jsonl(input_path)
+    row_ids = set()
     for row in rows:
         validate_row(row)
+        if row["id"] in row_ids:
+            raise ValueError(f"duplicate input id {row['id']!r}")
+        row_ids.add(row["id"])
         if len(row["options"]) > len(labels):
             raise ValueError(f"{row['id']}: more options than SII labels")
     if args.limit:
-        rows = rows[: args.limit]
-
+        rows = rows[:args.limit]
+    input_by_id = {row["id"]: row for row in rows}
+    identity = teacher_identity(args)
+    membership = args.q_transform == "membership"
+    if membership and args.allow_legacy_reasoning_cache:
+        raise ValueError("membership readout cannot use unverified legacy reasoning caches")
+    token_info = binary_token_info(tokenizer, args.yes_token, args.no_token) if membership else None
+    reasoning_digests = {str(path): file_sha256(path) for path in reasoning_paths}
     selected = [(index, row) for index, row in enumerate(rows)
                 if index % args.shards == args.shard]
     output_path = Path(output_path)
     _guard_output(output_path)
     profile_path = output_path.with_name(
         output_path.stem.replace("part-", "profile-") + ".json")
-
     done = set()
     if args.resume:
         sanitize_jsonl(output_path)
-        done = load_done_ids(output_path)
+        done = load_done_ids(output_path, expected_identity=identity,
+                             input_rows=input_by_id, args=args,
+                             reasoning_digests=reasoning_digests)
     selected = [(index, row) for index, row in selected if row["id"] not in done]
-    reasoning = load_reasoning_by_id(reasoning_paths, {row["id"] for _, row in selected})
-
+    reasoning = load_reasoning_by_id(
+        reasoning_paths, {row["id"] for _, row in selected}, expected_identity=identity,
+        input_rows=input_by_id, samples=args.samples,
+        allow_legacy=args.allow_legacy_reasoning_cache)
     profile = {
-        "phase": "readout",
+        "phase": "readout", **identity, "q_transform": args.q_transform,
+        "q_semantics": q_semantics(args.q_transform),
+        "readout": MEMBERSHIP_READOUT if membership else "sii_label_slot_diagnostic_v1",
+        "truncated_policy": args.truncated_policy,
         "input": str(input_path), "reasoning": [str(p) for p in reasoning_paths],
         "output": str(output_path), "model": str(args.model),
         "shard": args.shard, "shards": args.shards, "samples": args.samples,
-        "rows": 0, "chains": 0, "rows_zero_chain": 0,
-        "skipped_unusable": 0,
-        "seconds": 0.0, "status": "empty",
+        "rows": 0, "rows_with_q": 0, "rows_zero_chain": 0, "resumed_rows": len(done),
+        "chains": 0, "requested_chains": len(selected) * args.samples,
+        "missing_requested_chains": 0, "skipped_unusable": 0,
+        "excluded_truncated_chains": 0, "included_truncated_chains": 0,
+        "invalid_readout_chains": 0, "seconds": 0.0, "status": "empty",
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     if not selected:
         atomic_write_json(profile_path, profile)
         log(f"[{input_path.name} shard {args.shard}] nothing left to do")
         return profile
-
     begin = time.monotonic()
     with JsonlAppender(output_path, resume=args.resume and output_path.exists()) as out:
         for offset in range(0, len(selected), args.readout_batch_size):
-            batch = selected[offset: offset + args.readout_batch_size]
-            flat = []  # (row, entry)
-            prompts = []
-            prefix_cache = {}
+            batch = selected[offset:offset + args.readout_batch_size]
+            prompts, slots = [], []
+            entries_by_id, excluded_by_id = {}, defaultdict(list)
             for _index, row in batch:
-                available = reasoning.get(row["id"], [])
-                entries = [entry for entry in available
-                           if entry.get("finish_reason") not in UNUSABLE_FINISH_REASONS
-                           and (row["id"], entry["chain"]) not in done]
-                profile["skipped_unusable"] += len(available) - len(entries)
-                entries = entries[: args.samples]
-                if not entries:
-                    out.append([{
-                        "id": row["id"], "source": row.get("source"),
-                        "lang": row.get("lang"), "n_options": len(row["options"]),
-                        "n_chains": args.samples, "valid_chains": 0, "q": None,
-                        "per_chain_probs": [], "per_chain_softmax": [],
-                        "per_chain_finish_reasons": [],
-                        "reason": "no_reasoning",
-                    }])
-                    profile["rows"] += 1
-                    profile["rows_zero_chain"] += 1
-                    continue
-                prefix = prefix_cache.get(row["id"])
-                if prefix is None:
-                    prefix = make_think_prefix(tokenizer, row, labels)
-                    prefix_cache[row["id"]] = prefix
-                for entry in entries:
-                    prompts.append(make_read_prompt(
-                        prefix, entry.get("reasoning") or ""))
-                    flat.append((row, entry))
-
-            if not prompts:
-                continue
-            logits = _readout_with_retry(engine, prompts)
-            if logits is None:
-                for row, entry in flat:
-                    out.append([{
-                        "id": row["id"], "source": row.get("source"),
-                        "lang": row.get("lang"), "n_options": len(row["options"]),
-                        "n_chains": args.samples, "valid_chains": 0, "q": None,
-                        "per_chain_probs": [], "per_chain_softmax": [],
-                        "per_chain_finish_reasons": [],
-                        "reason": "readout_error",
-                    }])
-                    profile["rows"] += 1
-                    profile["rows_zero_chain"] += 1
-                continue
-
-            # Regroup the flat results by input id.
-            by_id = defaultdict(list)
-            for position, (row, entry) in enumerate(flat):
-                by_id[row["id"]].append((position, row, entry))
+                ident = row["id"]
+                available = {entry["chain"]: entry for entry in reasoning.get(ident, [])}
+                usable = []
+                for chain in range(args.samples):
+                    entry = available.get(chain)
+                    if entry is None:
+                        excluded_by_id[ident].append({
+                            "chain": chain, "finish_reason": "missing", "truncated": False,
+                            "included": False, "exclusion_reason": "missing_reasoning"})
+                        profile["missing_requested_chains"] += 1
+                        continue
+                    if (entry.get("finish_reason") in UNUSABLE_FINISH_REASONS
+                            or not entry["reasoning"].strip()):
+                        excluded_by_id[ident].append(_chain_metadata(entry, False, "unusable_reasoning"))
+                        profile["skipped_unusable"] += 1
+                        continue
+                    if entry.get("truncated", entry.get("finish_reason") == "length") \
+                            and args.truncated_policy == "exclude":
+                        excluded_by_id[ident].append(_chain_metadata(entry, False, "truncated_policy"))
+                        profile["excluded_truncated_chains"] += 1
+                        continue
+                    usable.append(entry)
+                    if membership:
+                        for candidate in range(len(row["options"])):
+                            prompt = make_membership_prompt(
+                                tokenizer, row, labels, entry["reasoning"], candidate,
+                                args.yes_token, args.no_token, args.teacher_view)
+                            validate_binary_token_boundary(tokenizer, prompt, token_info)
+                            prompts.append(prompt)
+                            slots.append((ident, chain, candidate))
+                    else:
+                        # Legacy transforms are reproducible diagnostics only.
+                        view = args.teacher_view if "teacher_view" in entry else None
+                        prefix = make_think_prefix(tokenizer, row, labels, teacher_view=view)
+                        prompts.append(make_read_prompt(prefix, entry["reasoning"]))
+                        slots.append((ident, chain, 0))
+                entries_by_id[ident] = usable
+            logits_by_chain = defaultdict(dict)
+            for begin_prompt in range(0, len(prompts), args.readout_batch_size):
+                end_prompt = begin_prompt + args.readout_batch_size
+                values = _readout_with_retry(engine, prompts[begin_prompt:end_prompt])
+                for slot, value in zip(slots[begin_prompt:end_prompt], values):
+                    ident, chain, candidate = slot
+                    logits_by_chain[(ident, chain)][candidate] = value
             records = []
             for _index, row in batch:
-                items = by_id.get(row["id"])
-                if not items:
-                    continue
-                n = len(row["options"])
-                sigmoids, centereds, softmaxes, finishes, logits_out = [], [], [], [], []
-                for position, _row, entry in items:
-                    sig, centered, soft = chain_probabilities(logits[position], n)
-                    sigmoids.append([round(value, 8) for value in sig])
-                    centereds.append([round(value, 8) for value in centered])
-                    softmaxes.append([round(value, 8) for value in soft])
-                    finishes.append(entry.get("finish_reason"))
-                    logits_out.append([round(value, 6) for value in
-                                       logits[position][:n].tolist()])
-                if args.q_transform == "softmax":
-                    source_probs = softmaxes
-                elif args.q_transform == "centered_sigmoid":
-                    source_probs = centereds
-                else:
-                    source_probs = sigmoids
-                q = [round(sum(values) / len(values), 8)
-                     for values in zip(*source_probs)] if source_probs else None
-                record = {
-                    "id": row["id"], "source": row.get("source"),
-                    "lang": row.get("lang"), "n_options": n,
-                    "n_chains": args.samples, "valid_chains": len(sigmoids),
-                    "q": q, "q_transform": args.q_transform,
-                    "per_chain_probs": sigmoids,
-                    "per_chain_centered": centereds,
-                    "per_chain_softmax": softmaxes,
-                    "per_chain_finish_reasons": finishes,
+                ident, n = row["id"], len(row["options"])
+                source_vectors, metadata, chain_ids, chain_logits = [], [], [], []
+                sigmoids, centereds, softmaxes, memberships = [], [], [], []
+                for entry in entries_by_id[ident]:
+                    values = logits_by_chain[(ident, entry["chain"])]
+                    try:
+                        required = n if membership else 1
+                        if set(values) != set(range(required)) or any(value is None for value in values.values()):
+                            raise ValueError("candidate readout failed")
+                        if membership:
+                            vector = [round(membership_probability(values[i]), 8) for i in range(n)]
+                            memberships.append(vector)
+                            logits_out = [[round(value, 6) for value in _finite_values(values[i])]
+                                          for i in range(n)]
+                        else:
+                            sig, centered, soft = chain_probabilities(values[0], n)
+                            sig, centered, soft = ([round(value, 8) for value in vector]
+                                                   for vector in (sig, centered, soft))
+                            sigmoids.append(sig)
+                            centereds.append(centered)
+                            softmaxes.append(soft)
+                            vector = {"sigmoid": sig, "centered_sigmoid": centered,
+                                      "softmax": soft}[args.q_transform]
+                            logits_out = [round(value, 6) for value in _finite_values(values[0])[:n]]
+                    except (ValueError, TypeError, OverflowError) as error:
+                        excluded_by_id[ident].append(_chain_metadata(entry, False, "invalid_readout"))
+                        profile["invalid_readout_chains"] += 1
+                        log(f"[error] {ident} chain {entry['chain']}: {error}")
+                        continue
+                    source_vectors.append(vector)
+                    chain_ids.append(entry["chain"])
+                    metadata.append(_chain_metadata(entry, True))
+                    chain_logits.append(logits_out)
+                    profile["included_truncated_chains"] += int(metadata[-1]["truncated"])
+                q = ([round(sum(column) / len(source_vectors), 8) for column in zip(*source_vectors)]
+                     if source_vectors else None)
+                provenance = {
+                    "schema_version": 2, "input_sha256": input_fingerprint(row),
+                    "input_digest": input_digest(row),
+                    "reasoning_prompt_version": REASONING_PROMPT_VERSION,
+                    "option_alignment": "input_option_order", "option_permutation": None,
+                    "reasoning_paths": [str(path) for path in reasoning_paths],
+                    "reasoning_cache_sha256": reasoning_digests,
+                    "model_path": str(args.model),
+                    "checkpoint_identity_kind": "explicit" if args.checkpoint_id else "local_path",
+                    "truncated_policy": args.truncated_policy,
+                    "legacy_reasoning_cache_allowed": args.allow_legacy_reasoning_cache,
+                    "binary_tokens": token_info,
+                    "joint_semantics": "marginal_readouts_only; no empirical joint distribution",
                 }
+                record = {
+                    "id": ident, "source": row.get("source"), "lang": row.get("lang"),
+                    **identity, "n_options": n,
+                    "input_digest": input_digest(row),
+                    "option_keys": [option["key"] for option in row["options"]],
+                    "n_chains": args.samples, "valid_chains": len(source_vectors),
+                    "missing_chains": args.samples - len(source_vectors),
+                    "q": q, "q_transform": args.q_transform,
+                    "q_semantics": q_semantics(args.q_transform),
+                    "readout": profile["readout"], "provenance": provenance,
+                    "per_chain_ids": chain_ids, "per_chain_membership": memberships,
+                    "per_chain_probs": sigmoids, "per_chain_centered": centereds,
+                    "per_chain_softmax": softmaxes,
+                    "per_chain_finish_reasons": [item["finish_reason"] for item in metadata],
+                    "per_chain_metadata": metadata,
+                    "excluded_chain_metadata": sorted(excluded_by_id[ident], key=lambda item: item["chain"]),
+                }
+                for field in ("selection_mode", "allow_empty"):
+                    if field in row:
+                        record[field] = row[field]
                 if args.store_logits:
-                    record["per_chain_logits"] = logits_out
-                if len(sigmoids) < args.samples:
-                    record["missing_chains"] = args.samples - len(sigmoids)
+                    record["per_chain_logits"] = chain_logits
+                    record["logit_order"] = [args.yes_token, args.no_token] if membership else labels[:n]
+                if q is None:
+                    record["reason"] = "no_valid_membership_chain" if membership else "no_valid_diagnostic_chain"
+                validate_readout_record(record, row=row, expected_identity=identity,
+                                        args=args, require_q=False)
                 records.append(record)
             out.append(records)
             profile["rows"] += len(records)
+            profile["rows_with_q"] += sum(record["q"] is not None for record in records)
+            profile["rows_zero_chain"] += sum(record["q"] is None for record in records)
             profile["chains"] += sum(record["valid_chains"] for record in records)
             if args.progress_every and profile["rows"] % args.progress_every < len(records):
-                elapsed = time.monotonic() - begin
                 log(f"[{input_path.name} shard {args.shard}] {profile['rows']} rows, "
-                    f"{profile['chains']} chains read in {elapsed:.0f}s")
-
-    seconds = time.monotonic() - begin
-    profile.update({"seconds": round(seconds, 3), "status": "ok"})
+                    f"{profile['chains']} valid chains")
+    profile.update({
+        "seconds": round(time.monotonic() - begin, 3),
+        "valid_chain_coverage": (profile["chains"] / profile["requested_chains"]
+                                 if profile["requested_chains"] else None),
+        "status": "incomplete" if profile["rows_zero_chain"] else "ok",
+    })
     atomic_write_json(profile_path, profile)
     log(f"[{input_path.name} shard {args.shard}] done: {profile['rows']} rows, "
-        f"{profile['chains']} chains, {profile['rows_zero_chain']} zero-chain")
+        f"{profile['chains']} chains, {profile['rows_zero_chain']} without q")
     return profile
 
 
@@ -830,19 +1214,17 @@ def run_readout(args):
         if not path.exists():
             raise SystemExit(f"input not found: {path}")
 
-    engine = ReadoutEngine(str(args.model), device=args.device,
-                           gpu_index=0, max_input_tokens=args.max_input_tokens)
-    tokenizer = engine.tokenizer
-    labels = engine.labels
-
     pending = []
-    for input_path, output_path in zip(inputs, outputs):
+    for input_path, output_path, reasoning_path in zip(inputs, outputs, reasoning):
         rows = read_jsonl(input_path)
         if args.limit:
             rows = rows[: args.limit]
         if args.resume:
             sanitize_jsonl(output_path)
-        done = load_done_ids(output_path) if args.resume else set()
+        done = (load_done_ids(output_path, expected_identity=teacher_identity(args),
+                              input_rows={row["id"]: row for row in rows}, args=args,
+                              reasoning_digests={str(reasoning_path): file_sha256(reasoning_path)})
+                if args.resume else set())
         shard_rows = [row for index, row in enumerate(rows)
                       if index % args.shards == args.shard]
         pending.append(any(row["id"] not in done for row in shard_rows))
@@ -850,11 +1232,20 @@ def run_readout(args):
         log(f"[shard {args.shard}] all inputs complete; skipping model load")
         return 0
 
+    engine = ReadoutEngine(str(args.model), device=args.device,
+                           gpu_index=0, max_input_tokens=args.max_input_tokens,
+                           q_transform=args.q_transform, yes_token=args.yes_token,
+                           no_token=args.no_token)
+    tokenizer = engine.tokenizer
+    labels = engine.labels
+
     status = 0
     for input_path, reasoning_path, output_path in zip(inputs, reasoning, outputs):
         try:
             profile = readout_split(engine, tokenizer, labels, args, input_path,
                                     [reasoning_path], output_path)
+            if profile["rows_zero_chain"]:
+                status = 1
             atomic_write_json(output_path.with_name(
                 output_path.stem.replace("part-", "profile-") + ".json"), profile)
         except Exception as error:  # noqa: BLE001 - keep the next split
@@ -871,24 +1262,39 @@ def _merge_records(parts, key_fn):
     for part in parts:
         sanitize_jsonl(part)
         for row in read_jsonl(part):
-            merged[key_fn(row)] = row
+            key = key_fn(row)
+            if key in merged:
+                raise ValueError(f"{part}: duplicate merged record key {key!r}")
+            merged[key] = row
     return merged
 
 
 def merge_reasoning(args):
     parts_root = Path(args.parts_root)
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir or DEFAULT_RUN_ROOT / "reasoning")
     output_dir.mkdir(parents=True, exist_ok=True)
+    coverage = {}
     for split_dir in sorted(path for path in parts_root.iterdir() if path.is_dir()):
         split = split_dir.name
         parts = sorted(path for path in split_dir.glob("part-*.jsonl")
                        if not path.name.endswith(".invalid.jsonl"))
         merged = _merge_records(parts, lambda row: (row.get("id"), row.get("chain")))
         input_path = Path(args.data_dir) / f"{split}.jsonl"
-        order = []
-        if input_path.exists():
-            order = [(row["id"], chain) for row in read_jsonl(input_path)
-                     for chain in range(args.samples)]
+        if not input_path.exists():
+            raise ValueError(f"reasoning merge input not found: {input_path}")
+        input_rows = read_jsonl(input_path)
+        if args.limit:
+            input_rows = input_rows[:args.limit]
+        input_by_id = {row["id"]: row for row in input_rows}
+        order = [(row["id"], chain) for row in input_rows for chain in range(args.samples)]
+        for (ident, chain), record in merged.items():
+            if ident not in input_by_id or type(chain) is not int or not 0 <= chain < args.samples:
+                raise ValueError(f"{split}: unexpected reasoning id/chain {(ident, chain)!r}")
+            verified = _validate_identity(record, teacher_identity(args), row=input_by_id[ident],
+                                            allow_legacy=args.allow_legacy_reasoning_cache)
+            if verified and record.get("reasoning_sha256") != hashlib.sha256(
+                    record.get("reasoning", "").encode("utf-8")).hexdigest():
+                raise ValueError(f"{ident}: reasoning cache digest mismatch")
         written = set()
         lines = []
         for key in order:
@@ -902,8 +1308,16 @@ def merge_reasoning(args):
                                         allow_nan=False))
         target = output_dir / f"{split}.jsonl"
         atomic_write_text(target, "\n".join(lines) + ("\n" if lines else ""))
+        coverage[split] = {
+            "input_rows": len(input_rows), "requested_chains": len(order),
+            "output_chains": len(merged), "missing_chains": len(set(order) - set(merged)),
+            "truncated_chains": sum(record.get("finish_reason") == "length" for record in merged.values()),
+            "finish_reasons": dict(Counter(record.get("finish_reason", "unknown") for record in merged.values())),
+        }
         log(f"[merge-reasoning] {len(parts)} parts -> {target} ({len(merged)} chains)")
-    return 0
+    atomic_write_json(output_dir / "reasoning_summary.json", {
+        **teacher_identity(args), "samples": args.samples, "coverage": coverage})
+    return int(not coverage or any(item["missing_chains"] for item in coverage.values()))
 
 
 def _token_stats(values):
@@ -971,40 +1385,47 @@ def _summarize(records, input_rows, profiles):
         observed = {"profiles": len(profiles), "gpu_seconds": round(seconds, 1),
                     "gpu_hours": round(seconds / 3600, 4)}
 
-    transform = (records[0].get("q_transform", "sigmoid") if records else "sigmoid")
-    if transform == "softmax":
-        method = ("SII answer-slot readout over thinking chains; q_chain = "
-                  "softmax(label logits[:K]) (SII's exact readout), averaged over "
-                  "chains.")
-        transform_note = ("q uses SII's exact softmax over the first K label "
-                          "logits; per_chain_probs still records the independent "
-                          "sigmoid alternative.")
-    elif transform == "centered_sigmoid":
-        method = ("SII answer-slot readout over thinking chains; q_chain = "
-                  "sigmoid(label logits[:K] - logsumexp over all 255 labels), "
-                  "averaged over chains.")
-        transform_note = ("Raw sigmoid saturates on an untrained base head; "
-                          "centering by the 255-label logsumexp keeps independent "
-                          "per-candidate probabilities without forcing a simplex. "
-                          "per_chain_probs/per_chain_softmax are recorded.")
+    transforms = {record.get("q_transform", "sigmoid") for record in records}
+    if len(transforms) > 1:
+        raise ValueError("cannot summarize mixed q transforms")
+    transform = next(iter(transforms), "membership")
+    if transform == "membership":
+        method = ("For each chain and candidate, retain the full question/options/reasoning "
+                  "and compute q_i = softmax([Yes logit, No logit])[Yes]; average "
+                  "complete candidate vectors across valid chains.")
+        transform_note = ("The binary events are explicitly candidate membership. "
+                          "These are model readouts, without a calibration guarantee.")
     else:
-        method = ("SII answer-slot readout over thinking chains; q_chain = "
-                  "sigmoid(label logits[:K]) (multi-select adaptation of SII's "
-                  "single-choice softmax), averaged over chains.")
-        transform_note = ("SII single-choice uses softmax over the first K label "
-                          "logits; this multi-select teacher uses the "
-                          "per-candidate sigmoid and averages it over chains. "
-                          "per_chain_softmax is recorded for comparison, and "
-                          "--q-transform softmax switches q to SII's exact readout.")
+        method = f"Legacy SII option-label {transform} diagnostic, averaged over chains."
+        transform_note = ("This transform is not a candidate membership probability and "
+                          "must not be used as a membership soft target. For centered_sigmoid, "
+                          "q_i = a_i/(1+a_i), where a_i is label softmax over all labels; "
+                          "the total is strictly below one.")
+    included_metadata = [item for record in records for item in record.get("per_chain_metadata", [])]
+    excluded_metadata = [item for record in records for item in record.get("excluded_chain_metadata", [])]
+    excluded_reasons = Counter(item.get("exclusion_reason", "unknown") for item in excluded_metadata)
+    requested_chains = sum(record.get("n_chains", 0) for record in records)
+    identities = {tuple(record.get(key) for key in ("teacher_id", "teacher_view", "checkpoint", "readout"))
+                  for record in records}
+    if len(identities) > 1:
+        raise ValueError("cannot summarize mixed teacher identities or readout versions")
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "method": method,
-        "q_transform": transform,
+        "q_transform": transform, "q_semantics": q_semantics(transform),
+        "teacher_components": [dict(zip(("teacher_id", "teacher_view", "checkpoint", "readout"), identity))
+                               for identity in sorted(identities, key=str)],
         "totals": total,
-        "valid_rate_chains": (round(total["chains"] / (total["rows"]
-                                                       * (records[0].get("n_chains") or 1)
-                                                       ), 6)
-                              if records and total["rows"] else None),
+        "requested_chains": requested_chains,
+        "valid_rate_chains": (round(total["chains"] / requested_chains, 6)
+                              if requested_chains else None),
+        "excluded_chain_reasons": dict(sorted(excluded_reasons.items())),
+        "truncation": {
+            "included": sum(bool(item.get("truncated")) for item in included_metadata),
+            "excluded": sum(bool(item.get("truncated")) for item in excluded_metadata),
+            "policies": sorted({record.get("provenance", {}).get("truncated_policy", "legacy_unspecified")
+                                for record in records}),
+        },
         "by_source": dict(sorted(by_source.items())),
         "q_value_stats": _token_stats([round(value, 6) for value in q_values]),
         "q_histogram": _histogram(q_values),
@@ -1025,13 +1446,13 @@ def _summarize(records, input_rows, profiles):
         "observed": observed,
         "notes": [
             transform_note,
-            "Raw sigmoid on a base-model output head can saturate when every "
-            "label logit is positive (CPU smoke on Qwen3.5-4B: logits 0.07..24, "
-            "sigmoid ~1.0 for all options); check q_value_stats and "
-            "per_chain_softmax, and use --q-transform softmax if it does.",
-            "Reasoning truncated at max_tokens is still read out; no answer text is "
-            "parsed anywhere in this pipeline.",
-            "q is null only when a row has no reasoning chain at all.",
+            "Each per_chain_membership vector contains separate candidate readouts. "
+            "A product-Bernoulli joint over those marginals is a downstream modeling "
+            "assumption, not an empirical joint distribution measured by this teacher.",
+            "Truncated chains follow the explicitly recorded include/exclude policy. "
+            "Excluded and failed chains remain visible in coverage and metadata.",
+            "q is null when no complete valid chain remains; missing candidate "
+            "readouts are never replaced with negative targets.",
         ],
     }
 
@@ -1049,7 +1470,8 @@ def _histogram(values, bins=10):
 def merge_readout(args):
     parts_root = Path(args.parts_root)
     data_dir = Path(args.data_dir)
-    data_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(args.output_dir or data_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     input_paths, all_records, all_inputs, profiles = [], [], [], []
     coverage = {}
     for split_dir in sorted(path for path in parts_root.iterdir() if path.is_dir()):
@@ -1058,8 +1480,18 @@ def merge_readout(args):
                        if not path.name.endswith(".invalid.jsonl"))
         merged = _merge_records(parts, lambda row: row.get("id"))
         input_path = data_dir / f"{split}.jsonl"
-        target = data_dir / f"sii_teacher_{split}.jsonl"
-        order = [row["id"] for row in read_jsonl(input_path)] if input_path.exists() else []
+        target = output_dir / f"sii_teacher_{split}.jsonl"
+        input_rows = read_jsonl(input_path) if input_path.exists() else []
+        if args.limit:
+            input_rows = input_rows[:args.limit]
+        input_by_id = {row["id"]: row for row in input_rows}
+        order = list(input_by_id)
+        for ident, record in merged.items():
+            if ident not in input_by_id:
+                raise ValueError(f"{split}: output id {ident!r} absent from input")
+            validate_readout_record(record, row=input_by_id[ident],
+                                    expected_identity=teacher_identity(args), args=args,
+                                    require_q=False)
         written = set()
         lines = []
         for ident in order:
@@ -1073,7 +1505,6 @@ def merge_readout(args):
         log(f"[merge-readout] {len(parts)} parts -> {target} ({len(merged)} ids)")
 
         if input_path.exists():
-            input_rows = read_jsonl(input_path)
             split_records = read_jsonl(target)
             input_paths.append(input_path)
             all_records.extend(split_records)
@@ -1085,6 +1516,8 @@ def merge_readout(args):
                 "output_rows": len(split_records),
                 "missing": len(input_ids - output_ids),
                 "extra": len(output_ids - input_ids),
+                "rows_with_q": sum(record.get("q") is not None for record in split_records),
+                "rows_without_q": sum(record.get("q") is None for record in split_records),
             }
             profiles.extend(json.loads(path.read_text())
                             for path in sorted(split_dir.glob("profile-*.json"))
@@ -1095,7 +1528,8 @@ def merge_readout(args):
     summary["coverage"] = coverage
     atomic_write_json(args.summary, summary)
     log(f"[summary] wrote {args.summary}")
-    return 0
+    return int(any(item["missing"] or item["extra"] or item["rows_without_q"]
+                   for item in coverage.values()))
 
 
 # ---------------------------------------------------------------------------
@@ -1105,7 +1539,13 @@ def validate_only(args):
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(str(args.model))
     labels = option_labels(tokenizer)
+    membership = args.q_transform == "membership"
+    binary_tokens = binary_token_info(tokenizer, args.yes_token, args.no_token) if membership else None
     report = {"model": str(args.model), "option_labels": len(labels),
+              **teacher_identity(args), "q_transform": args.q_transform,
+              "q_semantics": q_semantics(args.q_transform), "binary_tokens": binary_tokens,
+              "model_forward_executed": False,
+              "validation_scope": "tokenizer and prompts only; real model forward remains pending",
               "labels_head": labels[:10], "labels_tail": labels[-3:],
               "label_token_ids_head": [tokenizer.encode(label, add_special_tokens=False)[0]
                                        for label in labels[:10]],
@@ -1126,23 +1566,41 @@ def validate_only(args):
                 errors.append({"row": position, "error": str(error)})
                 failed = True
                 continue
-            prefix = make_think_prefix(tokenizer, row, labels)
-            reference = make_sii_prompt(tokenizer, row, labels)
-            empty_read = make_read_prompt(prefix, "")
-            if empty_read != reference:
-                errors.append({"row": position, "error": "empty-reasoning read prompt "
-                              "differs from prompts.prompt(enable_thinking=False)"})
-                failed = True
+            prefix = make_think_prefix(tokenizer, row, labels, teacher_view=args.teacher_view)
+            if membership:
+                candidate_prompts = [make_membership_prompt(
+                    tokenizer, row, labels, "", candidate, args.yes_token,
+                    args.no_token, args.teacher_view) for candidate in range(len(row["options"]))]
+                try:
+                    for prompt in candidate_prompts:
+                        validate_binary_token_boundary(tokenizer, prompt, binary_tokens)
+                except ValueError as error:
+                    errors.append({"row": position, "error": str(error)})
+                    failed = True
+                empty_read = candidate_prompts[0]
+                sample_with_reasoning = make_membership_prompt(
+                    tokenizer, row, labels, "short reasoning", 0,
+                    args.yes_token, args.no_token, args.teacher_view)
+            else:
+                legacy_prefix = make_think_prefix(tokenizer, row, labels)
+                reference = make_sii_prompt(tokenizer, row, labels)
+                if make_read_prompt(legacy_prefix, "") != reference:
+                    errors.append({"row": position, "error": "legacy empty-reasoning prompt "
+                                  "differs from the SII no-thinking reference"})
+                    failed = True
+                empty_read = make_read_prompt(prefix, "")
+                candidate_prompts = [empty_read]
+                sample_with_reasoning = make_read_prompt(prefix, "short reasoning")
             first_len = len(tokenizer(prefix, add_special_tokens=False)["input_ids"])
-            read_len = len(tokenizer(empty_read, add_special_tokens=False)["input_ids"])
+            read_len = max(len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+                           for prompt in candidate_prompts)
             stage1.append(first_len)
             stage2.append(read_len)
             by_source[row["source"]].append(first_len)
             if sample_output is None:
                 sample_output = {"id": row["id"], "think_prefix": prefix,
                                  "read_prompt_empty_reasoning": empty_read,
-                                 "read_prompt_with_reasoning": make_read_prompt(
-                                     prefix, "short reasoning")}
+                                 "read_prompt_with_reasoning": sample_with_reasoning}
         report["inputs"][str(path)] = {
             "rows": len(rows), "invalid_rows": errors[:20],
             "invalid_row_count": len(errors),
@@ -1164,9 +1622,19 @@ def validate_only(args):
 # ---------------------------------------------------------------------------
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="SII-style self-teacher: thinking chains + answer-slot readout",
+        description="Reasoning-chain teacher: candidate Yes/No membership readout",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
+    parser.add_argument("--teacher-id", default=None,
+                        help="teacher identity; defaults to checkpoint directory name plus :view")
+    parser.add_argument("--teacher-view", choices=tuple(VIEW_INSTRUCTIONS), default="direct",
+                        help="distinct reasoning instruction, recorded in every cache row")
+    parser.add_argument("--checkpoint-id", default=None,
+                        help="immutable checkpoint/revision identifier; otherwise records the local path")
+    parser.add_argument("--yes-token", default="Yes",
+                        help="explicit single-token affirmative spelling, checked with the tokenizer")
+    parser.add_argument("--no-token", default="No",
+                        help="explicit single-token negative spelling, checked with the tokenizer")
     parser.add_argument("--input", action="append", default=[],
                         help="data JSONL; repeat for train+dev")
     parser.add_argument("--output", action="append", default=[],
@@ -1194,12 +1662,15 @@ def parse_args(argv=None):
     parser.add_argument("--max-input-tokens", type=int, default=8192,
                         help="phase-B readout length guard")
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
-    parser.add_argument("--q-transform", choices=("sigmoid", "centered_sigmoid", "softmax"),
-                        default="centered_sigmoid",
-                        help="multi-select q: centered per-option sigmoid (default), "
-                             "raw sigmoid (saturates on base heads), or SII's exact softmax")
+    parser.add_argument("--q-transform", choices=("membership", "sigmoid", "centered_sigmoid", "softmax"),
+                        default="membership",
+                        help="candidate-specific Yes/No membership; old label transforms are diagnostics only")
+    parser.add_argument("--truncated-policy", choices=("include", "exclude"), default="exclude",
+                        help="include or exclude length-truncated chains and report both counts")
+    parser.add_argument("--allow-legacy-reasoning-cache", action="store_true",
+                        help="explicitly allow unverified old reasoning only for diagnostic transforms")
     parser.add_argument("--store-logits", action="store_true",
-                        help="also write per-chain label logits")
+                        help="also write per-chain candidate [Yes, No] logits (label logits for diagnostics)")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--progress-every", type=int, default=200)
@@ -1218,7 +1689,8 @@ def parse_args(argv=None):
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--summary", type=Path, default=DEFAULT_DATA / "sii_teacher_summary.json")
     parser.add_argument("--parts-root", type=Path, default=DEFAULT_RUN_ROOT / "q/parts")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_RUN_ROOT / "reasoning")
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help="merged output directory; defaults to the legacy location for the selected mode")
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA)
     args = parser.parse_args(argv)
     if args.mode:
@@ -1238,6 +1710,10 @@ def parse_args(argv=None):
         parser.error("generate needs --output (one per --input)")
     if args.readout and len(args.reasoning) < len(args.input):
         parser.error("readout needs --reasoning (one per --input)")
+    if args.allow_legacy_reasoning_cache and args.q_transform == "membership":
+        parser.error("--allow-legacy-reasoning-cache requires a diagnostic --q-transform")
+    if args.limit < 0:
+        parser.error("--limit must be nonnegative")
     return args
 
 
@@ -1269,3 +1745,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
+

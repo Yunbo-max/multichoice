@@ -5,7 +5,10 @@ The model reads the SII answer slot: the chat-templated State/Question/Options
 prompt followed by ``The correct answer is (``.  At the last prompt position it
 projects the output-head logits of the 255 legal single-token labels
 (A..Z, AA..) and keeps the first K = n_options candidates.  Candidates are
-independent Bernoulli variables scored with sigmoid (never softmax).
+independent Bernoulli variables scored with sigmoid in the default BCE baseline.
+``--objective set`` additionally learns an answer-count head and uses a coherent
+cardinality-conditioned distribution over subsets; its probabilities are not
+the raw sigmoid scores. See docs/multiteacher_set_distillation.md.
 
 Objective (per question, K candidates, logits s, target t in [0, 1]^K)::
 
@@ -21,7 +24,8 @@ Training is full-rank FSDP over the 176 language linear modules in
 ``innerjev/configs/4B/modules.json`` with the official SII hyperparameters.
 Embeddings and the output head stay frozen.  The final export is a standalone
 BF16 Hugging Face model directory (safe_serialization, <=5 GB shards) that
-``harness/sii_gpu_eval.py`` can load directly.
+``harness/eval_multiselect.py`` can load. Structured checkpoints also require
+their exported count-head sidecars; the old single-choice evaluator is unsuitable.
 
 Examples
 --------
@@ -62,6 +66,14 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+
+# Also support the repository's documented ``python -I harness/...`` invocations.
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from set_distillation import (
+    READOUT_SCHEMA, TARGET_SCHEMA, allowed_counts, attach_set_targets, input_digest,
+    read_set_target_file, set_loss_terms, structured_prediction,
+)
 
 ANSWER_CUE = "The correct answer is ("
 ROOT = Path(__file__).resolve().parents[1]
@@ -117,8 +129,16 @@ def option_labels(tokenizer):
 def make_body(row, labels):
     choices = "\n".join(
         f"({labels[i]}) {o['key']}: {o['desc']}" for i, o in enumerate(row["options"]))
-    return (f'State:\n{text_value(row["state"])}\nQuestion: {text_value(row["question"])}\n'
+    body = (f'State:\n{text_value(row["state"])}\nQuestion: {text_value(row["question"])}\n'
             f"Options:\n{choices}").rstrip()
+    # Legacy rows retain their original prompt; new datasets declare the task.
+    if "selection_mode" in row:
+        rule = ("Select exactly one correct option." if row["selection_mode"] == "single"
+                else "Select all correct options; " +
+                ("an empty answer is allowed." if row.get("allow_empty", False)
+                 else "at least one option is correct."))
+        body += "\nDecision rule: " + rule
+    return body
 
 
 def make_prompt(tokenizer, row, labels):
@@ -162,8 +182,12 @@ def validate_row(row, expected_split, label):
         return errors, len(options)
     if any(not isinstance(v, int) or isinstance(v, bool) or v not in (0, 1) for v in target):
         errors.append(f"{prefix}: gold target must be a multi-hot int list")
-    elif sum(target) < 1:
-        errors.append(f"{prefix}: gold target must contain at least one positive")
+    else:
+        try:
+            if sum(target) not in allowed_counts(row):
+                errors.append(f"{prefix}: gold count violates the declared selection protocol")
+        except ValueError as exc:
+            errors.append(f"{prefix}: {exc}")
     if row.get("n_options") != len(options):
         errors.append(f"{prefix}: n_options {row.get('n_options')} != {len(options)}")
     gold_letters = row.get("gold_letters")
@@ -218,7 +242,7 @@ def dataset_stats(rows):
 # ---------------------------------------------------------------------------
 # soft targets
 # ---------------------------------------------------------------------------
-def read_target_file(path: Path):
+def read_target_file(path: Path, allow_legacy=False):
     """Return (mapping id -> list[float], errors)."""
     mapping, errors, seen = {}, [], set()
     if not Path(path).exists():
@@ -234,6 +258,10 @@ def read_target_file(path: Path):
                 continue
             ident = row.get("id")
             values = row.get("q")
+            if not allow_legacy and row.get("q_semantics") != "candidate_membership":
+                errors.append(f"{path}:{line_number}: not a candidate-membership target; "
+                              "diagnostic/legacy logits require --allow-legacy-targets")
+                continue
             if not isinstance(ident, str) or not ident:
                 errors.append(f"{path}:{line_number}: id must be a nonempty string")
                 continue
@@ -294,10 +322,49 @@ def attach_train_targets(rows, mapping, mode):
     return errors, stats
 
 
+def prepare_training_targets(rows, args):
+    """One checked target path shared by validation and actual training."""
+    mode = args.target or ("file" if args.target_file else "gold")
+    if mode == "gold":
+        return attach_set_targets(rows)
+    if not args.target_file:
+        return ["--target file requires --target-file"], {}
+    records = read_jsonl(args.target_file)
+    if records and records[0].get("schema") == TARGET_SCHEMA:
+        mapping, errors = read_set_target_file(args.target_file)
+        if errors:
+            return errors, {}
+        return attach_set_targets(rows, mapping, args.gold_weight, args.target_missing)
+    if args.objective != "bce":
+        return ["--objective set requires coherent q/count targets built with "
+                "build_multiteacher_targets.py"], {}
+    mapping, errors = read_target_file(args.target_file, args.allow_legacy_targets)
+    # Verify content and order before discarding metadata in this legacy BCE path.
+    by_id = {row["id"]: row for row in rows}
+    for record in records:
+        row = by_id.get(record.get("id"))
+        if row is None or args.allow_legacy_targets:
+            continue
+        if record.get("option_keys") != [o["key"] for o in row["options"]]:
+            errors.append(f"{row['id']}: teacher option identity/order mismatch")
+        if record.get("input_digest") != input_digest(row):
+            errors.append(f"{row['id']}: teacher input content/protocol mismatch")
+    if errors:
+        return errors, {}
+    errors, stats = attach_train_targets(rows, mapping, args.target_missing)
+    if args.gold_weight:
+        for row in rows:
+            if "train_target" in row:
+                row["train_target"] = [(1 - args.gold_weight) * q + args.gold_weight * y
+                                       for q, y in zip(row["train_target"], row["target"])]
+    stats.update(gold_weight=args.gold_weight, allow_legacy_targets=args.allow_legacy_targets)
+    return errors, stats
+
+
 # ---------------------------------------------------------------------------
 # length-bucketed plan, microbatch selection, LR schedule
 # ---------------------------------------------------------------------------
-def batch_plan(rows, lengths, seed, epochs=1):
+def batch_plan(rows, lengths, seed, epochs=1, global_batch=64):
     """Deterministic length buckets, global batches, shuffled batch order."""
     result = []
     for epoch in range(epochs):
@@ -306,7 +373,7 @@ def batch_plan(rows, lengths, seed, epochs=1):
                 json.dumps([seed, epoch, rows[index]["id"]], sort_keys=True).encode()).hexdigest()
             return lengths[index], key
         order = sorted(range(len(rows)), key=ordering)
-        batches = [order[i:i + 64] for i in range(0, len(order), 64)]
+        batches = [order[i:i + global_batch] for i in range(0, len(order), global_batch)]
         random.Random(seed + epoch).shuffle(batches)
         result.extend(batches)
     return result
@@ -457,7 +524,7 @@ def _validated_predictions(rows, predictions):
     return result
 
 
-def compute_metrics(rows, predictions, threshold=0.5):
+def _legacy_compute_metrics(rows, predictions, threshold=0.5):
     """Micro candidate P/R/F1, question EM, group-wise F1 and mean BCE."""
     records = _validated_predictions(rows, predictions)
     groups = {
@@ -514,29 +581,20 @@ def compute_metrics(rows, predictions, threshold=0.5):
     return result
 
 
+def compute_metrics(rows, predictions, threshold=0.5):
+    from multiselect_metrics import compute_metrics as shared_metrics
+    return shared_metrics(rows, predictions, threshold=threshold, decoder="auto")
+
+
 def tune_threshold(rows, predictions, low=0.05, high=0.95, step=0.01):
-    records = _validated_predictions(rows, predictions)
+    # Caller uses dev only. Explicit single-choice tasks always use argmax.
     grid = []
     steps = int(round((high - low) / step)) + 1
     for index in range(steps):
         threshold = round(low + index * step, 2)
-        total = [0, 0, 0, 0, 0]
-        for row, probs, _ in records:
-            tp, fp, fn, tn = _counts(row["target"], probs, threshold)
-            total[0] += tp
-            total[1] += fp
-            total[2] += fn
-            total[3] += tn
-            total[4] += int(all((probability >= threshold) == bool(value)
-                                for value, probability in zip(row["target"], probs)))
-        precision, recall, f1 = _prf(total[0], total[1], total[2])
-        grid.append({
-            "threshold": threshold,
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-            "question_em": total[4] / len(records) if records else 0.0,
-        })
+        record = compute_metrics(rows, predictions, threshold)
+        grid.append({key: record[key] for key in
+                     ("threshold", "precision", "recall", "f1", "question_em")})
     best_em = max(grid, key=lambda item: (item["question_em"], item["f1"], item["precision"]))
     best_f1 = max(grid, key=lambda item: (item["f1"], item["question_em"]))
     return {
@@ -553,15 +611,27 @@ def tune_threshold(rows, predictions, low=0.05, high=0.95, step=0.01):
 class Readout(torch.nn.Module):
     """Answer slot -> 255 legal-label logits (frozen output head)."""
 
-    def __init__(self, base, label_ids, full_rank):
+    def __init__(self, base, label_ids, full_rank, objective="bce"):
         super().__init__()
+        if objective not in ("bce", "set"):
+            raise ValueError(f"unknown readout objective {objective!r}")
         self.base = base
         self.full_rank = full_rank
+        self.objective = objective
         self.register_buffer("label_ids", torch.tensor(label_ids, dtype=torch.long),
                              persistent=False)
         if not full_rank:
             weight = base.get_base_model().get_output_embeddings().weight[label_ids]
             self.register_buffer("legal_weight", weight.detach().clone(), persistent=False)
+        head = (base if full_rank else base.get_base_model()).get_output_embeddings()
+        if objective == "set":
+            self.count_head = torch.nn.Linear(head.weight.shape[1], len(label_ids) + 1,
+                                              device=head.weight.device, dtype=head.weight.dtype)
+            # A uniform allowed-count prior, independent of candidate logit shifts.
+            torch.nn.init.zeros_(self.count_head.weight)
+            torch.nn.init.zeros_(self.count_head.bias)
+        else:
+            self.count_head = None
 
     def forward(self, input_ids, attention_mask):
         base = self.base if self.full_rank else self.base.get_base_model()
@@ -575,7 +645,51 @@ class Readout(torch.nn.Module):
                 0, self.label_ids.to(dtype=torch.long))
         else:
             weight = self.legal_weight
-        return F.linear(slot, weight).float()
+        logits = F.linear(slot, weight).float()
+        if self.count_head is None:
+            return logits
+        counts = self.count_head(slot.to(dtype=self.count_head.weight.dtype)).float()
+        return logits, counts
+
+
+def load_count_head(wrapper, directory, required=True):
+    directory = Path(directory)
+    meta_path = directory / "decision_readout.json"
+    state_path = directory / "decision_count_head.pt"
+    if not meta_path.exists() and not state_path.exists() and not required:
+        return False
+    if wrapper.count_head is None:
+        raise ValueError("set checkpoint requires Readout(..., objective='set')")
+    if not meta_path.exists() or not state_path.exists():
+        raise ValueError(f"incomplete set readout checkpoint in {directory}")
+    meta = json.loads(meta_path.read_text())
+    if (meta.get("schema") != READOUT_SCHEMA or meta.get("objective") != "set"
+            or meta.get("max_candidates") != len(wrapper.label_ids)
+            or meta.get("hidden_size") != wrapper.count_head.in_features
+            or meta.get("label_ids") != wrapper.label_ids.cpu().tolist()):
+        raise ValueError("count-head schema, tokenizer label ids or dimensions mismatch")
+    state = torch.load(state_path, map_location="cpu", weights_only=True)
+    if any(not torch.isfinite(value).all() for value in state.values()):
+        raise ValueError("nonfinite count-head checkpoint")
+    wrapper.count_head.load_state_dict(state, strict=True)
+    return True
+
+
+def save_count_head(wrapper, directory, state=None):
+    if wrapper.count_head is None:
+        return
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    if state is None:
+        state = wrapper.count_head.state_dict()
+    torch.save({name: value.detach().cpu().float() for name, value in state.items()},
+               directory / "decision_count_head.pt")
+    save_json(directory / "decision_readout.json", {
+        "schema": READOUT_SCHEMA, "objective": "set", "decoder": "set_map",
+        "max_candidates": len(wrapper.label_ids),
+        "hidden_size": wrapper.count_head.in_features,
+        "label_ids": wrapper.label_ids.cpu().tolist(),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -750,30 +864,14 @@ def validate_only(args):
                 report["train_plan"]["stop_step"] = min(
                     report["train_plan"]["planned_steps"], args.max_steps)
 
-    # target file (train only)
-    target_report = {"mode": mode}
-    if mode == "file":
-        mapping, target_errors = read_target_file(args.target_file)
+    # Same target/provenance validation as the training path; no weights loaded.
+    target_report = {"mode": mode, "objective": args.objective}
+    try:
+        target_errors, stats = prepare_training_targets(train_rows, args)
         errors.extend(target_errors)
-        if mapping and train_rows is not None:
-            target_errors, stats = attach_train_targets(train_rows, mapping, args.target_missing)
-            errors.extend(target_errors)
-            target_report.update(stats)
-            values = [value for row in train_rows for value in row.get("train_target", [])]
-            if values:
-                target_report.update({
-                    "n_values": len(values),
-                    "min": min(values),
-                    "max": max(values),
-                    "mean": sum(values) / len(values),
-                    "sum_min": min(sum(row["train_target"]) for row in train_rows
-                                   if "train_target" in row),
-                    "sum_max": max(sum(row["train_target"]) for row in train_rows
-                                   if "train_target" in row),
-                })
-        target_report["file"] = str(args.target_file)
-    else:
-        target_report.update({"source": "gold", "from_file": 0, "missing": 0})
+        target_report.update(stats)
+    except (ValueError, OSError) as exc:
+        errors.append(f"targets: {exc}")
     report["targets"] = target_report
 
     # module / trainable-parameter check on meta tensors (no weights)
@@ -869,7 +967,8 @@ def self_test():
     checks["question_em"] = metrics["question_em"] == 1.0
     checks["candidate_counts"] = (metrics["tp"] == 6 and metrics["fp"] == 0
                                   and metrics["fn"] == 0)
-    checks["group_keys"] = set(metrics["groups"]) == {"source", "lang", "k", "k_bucket"}
+    checks["group_keys"] = set(metrics["groups"]) == {
+        "source", "lang", "k", "k_bucket", "selection_mode"}
 
     tuned = tune_threshold(rows, predictions)
     checks["threshold_grid_size"] = len(tuned["grid"]) == 91
@@ -980,7 +1079,14 @@ def main():
     parser.add_argument("--target", choices=["gold", "file"], default=None,
                         help="gold multi-hot target or soft targets from --target-file")
     parser.add_argument("--target-file", type=Path)
-    parser.add_argument("--target-missing", choices=["error", "zero", "gold"], default="error")
+    parser.add_argument("--target-missing", choices=["error", "gold"], default="error")
+    parser.add_argument("--objective", choices=["bce", "set"], default="bce")
+    parser.add_argument("--gold-weight", type=float, default=0.0,
+                        help="fixed gold fraction in a file target; gold-only ignores this flag")
+    parser.add_argument("--count-target", choices=["teacher", "gold"], default="teacher",
+                        help="set: coherent set CE; gold: marginal-BCE plus gold count-CE ablation")
+    parser.add_argument("--allow-legacy-targets", action="store_true",
+                        help="explicit BCE-only diagnostic override for old untyped target files")
     parser.add_argument("--lambda-g", type=float, default=0.0)
     parser.add_argument("--graph", choices=["none", "identity", "cosine"], default="none")
     parser.add_argument("--lr", type=float, default=2e-6)
@@ -1015,6 +1121,12 @@ def main():
         parser.error("--train and --dev are required")
     if args.lambda_g < 0:
         parser.error("--lambda-g must be >= 0")
+    if not math.isfinite(args.gold_weight) or not 0 <= args.gold_weight <= 1:
+        parser.error("--gold-weight must be in [0,1]")
+    if args.objective == "set" and (args.lambda_g != 0 or args.graph != "none"):
+        parser.error("set objective does not mix in the legacy label-token graph penalty")
+    if args.objective == "bce" and args.count_target != "teacher":
+        parser.error("--count-target gold is a set-head ablation and requires --objective set")
     if args.global_batch < 1 or args.epochs < 1:
         parser.error("--global-batch and --epochs must be positive")
     if args.world_size < 1:
@@ -1048,11 +1160,9 @@ def main():
     if args.limit_dev:
         dev_rows = dev_rows[:args.limit_dev]
 
-    mapping = None
-    if mode == "file":
-        mapping, target_errors = read_target_file(args.target_file)
-        if target_errors:
-            raise ValueError("target file validation failed:\n  " + "\n  ".join(target_errors[:20]))
+    target_errors, target_stats = prepare_training_targets(train_rows, args)
+    if target_errors:
+        raise ValueError("target validation failed:\n  " + "\n  ".join(target_errors[:20]))
 
     from transformers import AutoConfig, AutoTokenizer
     from transformers import Qwen3_5ForCausalLM, Qwen3_5ForConditionalGeneration
@@ -1062,9 +1172,6 @@ def main():
     labels = option_labels(tokenizer)
     label_ids = [tokenizer.encode(label, add_special_tokens=False)[0] for label in labels]
 
-    target_errors, target_stats = attach_train_targets(train_rows, mapping, args.target_missing)
-    if target_errors:
-        raise ValueError("target attachment failed:\n  " + "\n  ".join(target_errors[:20]))
     log(f"[data] train={len(train_rows)} dev={len(dev_rows)} targets={target_stats}")
 
     train_prompts = [make_prompt(tokenizer, row, labels) for row in train_rows]
@@ -1077,7 +1184,7 @@ def main():
         raise ValueError(f"prompt length {max(train_lengths + dev_lengths)} exceeds "
                          f"--max-input-tokens {args.max_input_tokens}; inputs are never truncated")
 
-    batches = batch_plan(train_rows, train_lengths, args.seed, args.epochs)
+    batches = batch_plan(train_rows, train_lengths, args.seed, args.epochs, args.global_batch)
     planned_steps = len(batches)
     stop_step = min(planned_steps, args.max_steps) if args.max_steps > 0 else planned_steps
     eval_steps = {min(stop_step, max(1, math.ceil(planned_steps * args.eval_every_frac * i)))
@@ -1110,6 +1217,10 @@ def main():
         if start_step >= stop_step:
             raise ValueError(f"resume step {start_step} >= stop step {stop_step}")
         log(f"[resume] from {load_path} at step {start_step}")
+        log("[resume] weights and step schedule restored; optimizer starts fresh")
+    if args.objective == "bce" and any((load_path / name).exists() for name in
+                                       ("decision_readout.json", "decision_count_head.pt")):
+        raise ValueError("set checkpoint requires --objective set; refusing to discard its count head")
 
     output = Path(args.output)
     if rank == 0:
@@ -1123,6 +1234,8 @@ def main():
             "train": str(args.train), "dev": str(args.dev), "model": str(args.model),
             "modules": str(args.modules), "output": str(output),
             "target_mode": mode, "target_file": str(args.target_file) if args.target_file else None,
+            "objective": args.objective, "count_target": args.count_target,
+            "gold_weight": args.gold_weight, "allow_legacy_targets": args.allow_legacy_targets,
             "lambda_g": args.lambda_g, "graph": args.graph, "lr": args.lr,
             "global_batch": args.global_batch, "epochs": args.epochs,
             "max_input_tokens": args.max_input_tokens,
@@ -1178,7 +1291,12 @@ def main():
         graph_cache = build_graph_cache(args.graph, train_ks, kernel, device)
         log(f"[graph] kind={args.graph} lambda_g={args.lambda_g} Ks={train_ks}")
 
-    wrapper = Readout(base, label_ids, full)
+    wrapper = Readout(base, label_ids, full, objective=args.objective)
+    if args.objective == "set":
+        load_count_head(wrapper, load_path, required=bool(args.resume))
+        count_trainable = sum(p.numel() for p in wrapper.count_head.parameters())
+        log(f"[model] additional_count_head_parameters={count_trainable}")
+        trainable += count_trainable
     params = None
     if full:
         from torch.distributed.fsdp import FullyShardedDataParallel as FSDP, MixedPrecision
@@ -1238,7 +1356,8 @@ def main():
             count = len(indices)
             padded = indices + [indices[-1]] * (world * micro - count)
             own = padded[rank * micro:(rank + 1) * micro]
-            logits = model(**encode_texts(own, dev_prompts))
+            result = model(**encode_texts(own, dev_prompts))
+            logits, count_logits = result if args.objective == "set" else (result, None)
             for position, index in enumerate(own):
                 if rank * micro + position >= count:
                     continue
@@ -1247,12 +1366,17 @@ def main():
                 scores = logits[position, :k].float()
                 target = torch.as_tensor(row["target"], dtype=torch.float32,
                                          device=scores.device)
-                bce = F.binary_cross_entropy_with_logits(scores, target, reduction="mean")
-                predictions.append({
-                    "id": row["id"],
-                    "p": torch.sigmoid(scores).cpu().tolist(),
-                    "bce": float(bce),
-                })
+                if args.objective == "set":
+                    item = structured_prediction(scores.cpu().tolist(),
+                                                 count_logits[position, :k + 1].cpu().tolist(), row)
+                    item["candidate_logits"] = scores.cpu().tolist()
+                    # Shared metrics compute marginal BCE identically to standalone eval.
+                else:
+                    item = {"p": torch.sigmoid(scores).cpu().tolist(),
+                            "logits": scores.cpu().tolist()}
+                    bce = F.binary_cross_entropy_with_logits(scores, target, reduction="mean")
+                    item["bce"] = float(bce)
+                predictions.append({"id": row["id"], **item})
             offset += count
         gathered = [None] * world
         torch.distributed.all_gather_object(gathered, predictions)
@@ -1262,10 +1386,11 @@ def main():
                 merged[item["id"]] = item
         record = compute_metrics(dev_rows, list(merged.values()), threshold=0.5)
         record["step"] = step
-        record["threshold_tuning"] = tune_threshold(
-            dev_rows, list(merged.values()), 0.05, 0.95, 0.01)
+        if args.objective == "bce":
+            record["threshold_tuning"] = tune_threshold(
+                dev_rows, list(merged.values()), 0.05, 0.95, 0.01)
         record["selection"] = {
-            "metric": "question_em@0.5",
+            "metric": "question_em:set_map" if args.objective == "set" else "question_em@0.5",
             "tie_break": "lower_bce",
             "question_em": record["question_em"],
             "bce": record["bce"],
@@ -1287,12 +1412,19 @@ def main():
                 state = model.state_dict()
             if rank == 0:
                 exported = {}
+                count_state = {}
                 for name, value in state.items():
-                    name = name.removeprefix("base.")
-                    exported[name] = (value.to(torch.bfloat16) if value.is_floating_point()
-                                      else value)
+                    if name.startswith("count_head."):
+                        count_state[name.removeprefix("count_head.")] = value
+                    elif name.startswith("base."):
+                        exported[name.removeprefix("base.")] = (
+                            value.to(torch.bfloat16) if value.is_floating_point() else value)
+                    else:
+                        raise ValueError(f"unexpected wrapper parameter in export: {name}")
                 base.save_pretrained(destination, state_dict=exported,
                                      safe_serialization=True, max_shard_size="5GB")
+                if args.objective == "set":
+                    save_count_head(wrapper, destination, count_state)
                 tokenizer.save_pretrained(destination)
                 save_json(output / f"export_check-{step:06d}.json", verify_export(destination))
             del state
@@ -1300,6 +1432,7 @@ def main():
             if rank == 0:
                 base.save_pretrained(destination)
                 tokenizer.save_pretrained(destination)
+                save_count_head(wrapper, destination)
         torch.distributed.barrier()
 
     model.train()
@@ -1320,9 +1453,14 @@ def main():
         for part in partitions[rank]:
             batch_indices = [row_index for _, row_index in part]
             batch_targets = [train_rows[row_index]["train_target"] for row_index in batch_indices]
-            logits = model(**encode_texts(batch_indices, train_prompts))
-            losses, bces, graphs = loss_terms(
-                logits, batch_targets, args.lambda_g, graph_cache)
+            result = model(**encode_texts(batch_indices, train_prompts))
+            if args.objective == "set":
+                losses, bces, graphs = set_loss_terms(
+                    result[0], result[1], [train_rows[i] for i in batch_indices],
+                    count_target=args.count_target)
+            else:
+                losses, bces, graphs = loss_terms(
+                    result, batch_targets, args.lambda_g, graph_cache)
             active = torch.tensor([position < count for position, _ in part],
                                   device=device, dtype=losses.dtype)
             (losses * active).sum().mul(world / count).backward()
@@ -1344,8 +1482,11 @@ def main():
             "planned_steps": planned_steps,
             "stop_step": stop_step,
             "loss": float(sums[0] / rows_seen),
-            "bce": float(sums[1] / rows_seen),
-            "g_term": float(sums[2] / rows_seen),
+            ("bce" if args.objective == "bce" else "score_bce_diagnostic"):
+                float(sums[1] / rows_seen),
+            ("g_term" if args.objective == "bce" else "count_ce"):
+                float(sums[2] / rows_seen),
+            "objective": args.objective,
             "grad": float(grad),
             "lr": optimizer.param_groups[0]["lr"],
             "seconds": seconds,
@@ -1358,8 +1499,10 @@ def main():
         if rank == 0:
             with (output / "training.jsonl").open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(record) + "\n")
-            for key in ("loss", "bce", "g_term", "grad", "lr", "seconds", "tokens_per_s"):
-                writer.add_scalar("train/" + key, record[key], step)
+            for key in ("loss", "bce", "g_term", "score_bce_diagnostic", "count_ce",
+                        "grad", "lr", "seconds", "tokens_per_s"):
+                if key in record:
+                    writer.add_scalar("train/" + key, record[key], step)
             print(json.dumps(record), flush=True)
 
         if step in eval_steps:
@@ -1377,11 +1520,13 @@ def main():
                     "f1": evaluation["f1"],
                     "precision": evaluation["precision"],
                     "recall": evaluation["recall"],
-                    "threshold": 0.5,
-                    "best_threshold_by_question_em":
-                        evaluation["threshold_tuning"]["best_by_question_em"],
-                    "selection": "dev question EM at threshold 0.5; tie-break lower BCE",
+                    "threshold": None if args.objective == "set" else 0.5,
+                    "decoder": "set_map" if args.objective == "set" else "protocol_or_threshold",
+                    "selection": "dev question EM; tie-break lower marginal BCE",
                 }
+                if "threshold_tuning" in evaluation:
+                    best_record["best_threshold_by_question_em"] = (
+                        evaluation["threshold_tuning"]["best_by_question_em"])
             if rank == 0:
                 save_json(output / f"validation_{step:06d}.json", evaluation)
                 for name, value in (
@@ -1389,12 +1534,12 @@ def main():
                         ("precision", evaluation["precision"]),
                         ("recall", evaluation["recall"]),
                         ("f1", evaluation["f1"]),
-                        ("bce", evaluation["bce"]),
-                        ("best_threshold_em",
-                         evaluation["threshold_tuning"]["best_by_question_em"]["question_em"]),
-                        ("best_threshold",
-                         evaluation["threshold_tuning"]["best_by_question_em"]["threshold"])):
+                        ("bce", evaluation["bce"])):
                     writer.add_scalar("validation/" + name, value, step)
+                if "threshold_tuning" in evaluation:
+                    best_threshold = evaluation["threshold_tuning"]["best_by_question_em"]
+                    writer.add_scalar("validation/best_threshold_em", best_threshold["question_em"], step)
+                    writer.add_scalar("validation/best_threshold", best_threshold["threshold"], step)
                 writer.flush()
             if improved:
                 log(f"[eval] step {step}: EM={evaluation['question_em']:.4f} "
@@ -1423,6 +1568,9 @@ def main():
             # intermediate LoRA checkpoints hold adapters; merge the selected one
             materialize_lora(args.model, selected, final)
             tokenizer.save_pretrained(final)
+            if args.objective == "set":
+                for name in ("decision_readout.json", "decision_count_head.pt"):
+                    shutil.copy2(selected / name, final / name)
         save_json(output / "export_check.json", verify_export(final))
         save_json(output / "selection.json", best_record)
         save_json(output / "training_complete.json", {
@@ -1435,6 +1583,8 @@ def main():
             "final_export": str(final),
             "lambda_g": args.lambda_g,
             "graph": args.graph,
+            "objective": args.objective, "count_target": args.count_target,
+            "gold_weight": args.gold_weight,
         })
         if writer is not None:
             writer.close()
@@ -1446,3 +1596,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
