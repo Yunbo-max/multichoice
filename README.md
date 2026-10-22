@@ -22,11 +22,34 @@ See [the method, mathematics, prior-work audit and runnable recipe](docs/multite
 - `build_multiteacher_targets.py`: condition each chain on the task protocol,
   then mix fixed teacher weights; produce coherent membership and count targets.
 - `set_distillation.py` and `train_multiselect.py --objective set`: hard or soft
-  set CE, separately learned count head, exact marginals and set-MAP decoding.
+  set CE, separately learned count head, exact marginals and set-MAP decoding;
+  `--set-loss independent_marginal` / `induced_marginal` provide controls with
+  the same teacher membership/count targets, architecture and decoder.
 - `multiselect_to_unified.py`: passage/group-separated MultiRC splits; optional
   native single-choice plus multi-select CMB data using `--cmb-question-mode mixed`.
 - `eval_multiselect.py`: frozen test evaluation, source/mode/count metrics,
-  structured checkpoint support, and separately labeled oracle diagnostics.
+  structured checkpoint support, stable joint-set NLL, membership and set-confidence
+  Brier scores, checkpoint/input identity, and separately labeled oracle diagnostics.
+
+## New exploration: stronger student, weaker next-generation teacher?
+
+See [the hypothesis, mathematics, matched experiments and commands](docs/decision_teacher_generations.md)
+and the [editable pilot configuration](experiments/decision_teacher_rounds.example.json).
+
+- `plan_self_distillation_rounds.py` writes a bounded argv DAG for fixed versus
+  refreshed teachers and common-initialization teaching probes. It does not
+  launch GPU jobs or fabricate identities for future checkpoints.
+- `audit_teacher_generations.py` compares native direct decisions and reasoning
+  teacher distributions on the same covered dev questions, reporting coverage,
+  completion, count quality and complete-set probability separately.
+- `audit_teaching_utility.py` verifies completed next-student experiments with
+  the same initial weights, seeds, data, updates and decoder, then measures
+  teaching gains over gold-only training and between teacher generations.
+
+Direct accuracy, reasoning-teacher quality, and downstream teaching utility are
+different measurements. **The degradation hypothesis has not been demonstrated.**
+The main set-loss comparison also remains untrained; these additions make the
+scientific comparisons executable and auditable, not empirically successful.
 
 The default trainer remains BCE. New data/output directories are required; the
 archival datasets, pilot outputs and reported run below have not been rewritten.
@@ -79,7 +102,10 @@ The file `data/multiselect/summary.json` contains the full statistics.
 `harness/multiselect_to_unified.py` builds the data from the raw CMB and MultiRC
 files. With `--objective set`, the trainer instead uses
 `[-sum_m rho_T[m] log rho_model[m] - dot(q_T,s) + sum_m rho_T[m] log Z_m(s)] / K`.
-The complete derivation and baseline controls are in the linked method document.
+That is the default `--set-loss set_ce`. The stronger matched-information control
+uses `--set-loss induced_marginal --count-weight 1`: BCE on the actual marginals
+of the same set distribution plus teacher count CE. The complete derivation,
+shared-optimum qualifications and baseline controls are in the linked method document.
 
 ## Archived result: gold-supervised multi-hot BCE
 

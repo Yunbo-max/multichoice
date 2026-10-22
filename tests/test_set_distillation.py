@@ -118,6 +118,18 @@ class SetMathTests(unittest.TestCase):
         self.assertEqual(shifted["predicted_indices"], result["predicted_indices"])
         self.assertVectorClose(shifted["p"], result["p"], places=9)
 
+    def test_map_log_probabilities_match_distribution_and_retain_rare_counts(self):
+        question = row(3)
+        scores, counts = [.4, -1.2, 2.1], [0., -10000., 1.2, -.2]
+        result = structured_prediction(scores, counts, question)
+        distribution = enumerate_student(scores, result["count_probs"])
+        selected = tuple(int(i in result["predicted_indices"]) for i in range(3))
+        self.assertAlmostEqual(result["predicted_set_log_probability"], math.log(distribution[selected]))
+        self.assertIsNone(result["count_log_probs"][0])
+        self.assertEqual(result["count_probs"][1], 0.0)  # Underflow is expected in probability space.
+        self.assertLess(result["count_log_probs"][1], -10000)
+        self.assertTrue(math.isfinite(result["count_log_probs"][1]))
+
     def test_single_choice_loss_reduces_to_ce(self):
         scores, q = [.2, -.5, 1.4], [0, 0, 1]
         actual = scalar_set_cross_entropy(scores, [2, -5, 1, 3], q, [0, 1, 0, 0], [1], False)

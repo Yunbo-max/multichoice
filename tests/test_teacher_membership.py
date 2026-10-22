@@ -136,6 +136,37 @@ class MembershipTests(unittest.TestCase):
         args = teacher.parse_args([])
         self.assertEqual(args.q_transform, "membership")
 
+    def test_native_readout_and_target_provenance_support_generation_audit(self):
+        # Actual harness schema through a fake engine; no neural execution.
+        from audit_teacher_generations import _signature
+        from build_multiteacher_targets import aggregate_row
+        self.row["split"] = "train"
+        args = self.args()
+        record, _, _, path = self.run_readout(args=args)
+        signature, known = _signature(record)
+        self.assertTrue(known)
+        self.assertEqual(signature["generation"]["max_model_len"], args.max_model_len)
+        teachers = [{"id": args.teacher_id, "weight": 1., "normalized_weight": 1.,
+                     "path": path, "file_sha256": teacher.file_sha256(path)}]
+        target = aggregate_row(self.row, {args.teacher_id: {self.row["id"]: record}}, teachers)
+        component = target["teacher_provenance"][0]
+        from_target, target_known = _signature({**component, "id": target["id"],
+                                              "n_chains": component["requested_chains"]})
+        self.assertTrue(target_known)
+        self.assertEqual(signature, from_target)
+
+    def test_resume_rejects_changed_generation_or_readout_context_budget(self):
+        args = self.args()
+        record, _, _, path = self.run_readout(args=args)
+        with self.assertRaisesRegex(ValueError, "readout token budget"):
+            teacher.validate_readout_record(record, args=self.args(max_input_tokens=9999))
+        reasoning = path.parent / "budget_chains.jsonl"
+        self.write_jsonl(reasoning, [self.chain(args, 0)])
+        with self.assertRaisesRegex(ValueError, "max_model_len mismatch"):
+            teacher.load_done_chains(reasoning, expected_identity=teacher.teacher_identity(args),
+                                     input_rows={self.row["id"]: self.row},
+                                     args=self.args(max_model_len=9999))
+
     def test_default_teacher_id_distinguishes_views_of_one_checkpoint(self):
         direct = teacher.parse_args(["--model", "/models/fake", "--teacher-view", "direct"])
         verify = teacher.parse_args(["--model", "/models/fake", "--teacher-view", "verify"])

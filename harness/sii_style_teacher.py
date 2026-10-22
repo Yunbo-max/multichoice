@@ -286,7 +286,7 @@ def chain_provenance(args, row):
         "option_keys": [option["key"] for option in row["options"]],
         "option_alignment": "input_option_order",
         "generation": {key: getattr(args, key) for key in
-                       ("seed", "temperature", "top_p", "top_k", "max_tokens")},
+                       ("seed", "temperature", "top_p", "top_k", "max_tokens", "max_model_len")},
     }
 
 
@@ -433,7 +433,11 @@ def validate_readout_record(record, row=None, expected_identity=None, args=None,
         provenance = record.get("provenance") or {}
         if provenance.get("truncated_policy") != args.truncated_policy:
             raise ValueError(f"{ident}: cached truncated_policy mismatch")
+        if provenance.get("readout_max_input_tokens") != args.max_input_tokens:
+            raise ValueError(f"{ident}: cached readout token budget is missing or differs")
         if transform == "membership":
+            if provenance.get("readout_prompt_version") != MEMBERSHIP_READOUT:
+                raise ValueError(f"{ident}: cached membership prompt version is missing or differs")
             for key in ("yes_token", "no_token"):
                 if (provenance.get("binary_tokens") or {}).get(key) != getattr(args, key):
                     raise ValueError(f"{ident}: cached binary {key} mismatch")
@@ -508,7 +512,7 @@ def load_done_chains(path, *, expected_identity=None, input_rows=None, args=None
             _validate_identity(record, expected_identity, row=(input_rows or {}).get(ident))
             if args is not None:
                 generation = (record.get("provenance") or {}).get("generation", {})
-                for key in ("seed", "temperature", "top_p", "top_k", "max_tokens"):
+                for key in ("seed", "temperature", "top_p", "top_k", "max_tokens", "max_model_len"):
                     if generation.get(key) != getattr(args, key):
                         raise ValueError(f"{ident}: cached generation {key} mismatch")
                 if chain >= args.samples:
@@ -1141,6 +1145,8 @@ def readout_split(engine, tokenizer, labels, args, input_path, reasoning_paths,
                     "schema_version": 2, "input_sha256": input_fingerprint(row),
                     "input_digest": input_digest(row),
                     "reasoning_prompt_version": REASONING_PROMPT_VERSION,
+                    "readout_prompt_version": MEMBERSHIP_READOUT if args.q_transform == "membership" else "legacy_label_readout",
+                    "readout_max_input_tokens": args.max_input_tokens,
                     "option_alignment": "input_option_order", "option_permutation": None,
                     "reasoning_paths": [str(path) for path in reasoning_paths],
                     "reasoning_cache_sha256": reasoning_digests,

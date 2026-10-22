@@ -352,5 +352,99 @@ class EvaluationCliTests(unittest.TestCase):
             self.assertEqual(evaluator.checkpoint_objective(model), "set")
 
 
+class ProbabilityAndProvenanceTests(unittest.TestCase):
+    def test_saved_input_and_candidate_alignment_are_checked_and_identity_is_preserved(self):
+        metrics = load_harness("multiselect_metrics")
+        data = row("a", split="dev")
+        item = {"id": "a", "p": [.8, .2], "option_keys": ["A", "B"],
+                "input_digest": metrics.input_digest(data), "checkpoint_id": "sha256:fixture",
+                "provenance": {"checkpoint_identity_kind": "explicit"}}
+        record = metrics.prediction_records([data], [item])[0]
+        self.assertEqual(record["checkpoint_id"], item["checkpoint_id"])
+        self.assertEqual(record["provenance"], item["provenance"])
+        self.assertEqual(record["input_digest"], item["input_digest"])
+        for mutation, pattern in (({"option_keys": ["B", "A"]}, "identity/order"),
+                                  ({"input_digest": "stale"}, "content/protocol")):
+            with self.assertRaisesRegex(ValueError, pattern):
+                metrics.prediction_records([data], [{**item, **mutation}])
+
+    def test_joint_nll_is_complete_set_probability_and_confidence_brier_is_binary_event(self):
+        metrics = load_harness("multiselect_metrics")
+        sets = load_harness("set_distillation")
+        data = row("a", split="dev", target=[1, 0])
+        # P({A})=P({B})=.25 and P({A,B})=.5: MAP is AB, not count-one top-A.
+        prediction = sets.structured_prediction([0., 0.], [0., 0., 0.], data)
+        prediction.update(id="a", candidate_logits=[0., 0.])
+        report = metrics.compute_metrics([data], [prediction], decoder="auto")
+        self.assertAlmostEqual(report["joint_set_nll"], math.log(4))
+        self.assertAlmostEqual(report["set_confidence_brier"], .25)
+        self.assertAlmostEqual(report["membership_brier"], (.25 ** 2 + .75 ** 2) / 2)
+        self.assertEqual(report["question_em"], 0)
+        self.assertEqual(report["set_nll_origins"], {"stable_count_log_probs": 1})
+
+    def test_extremely_small_count_probability_retains_unclipped_joint_nll(self):
+        metrics = load_harness("multiselect_metrics")
+        sets = load_harness("set_distillation")
+        data = row("a", split="dev", target=[1, 0])
+        prediction = sets.structured_prediction([0., 0.], [0., -10000., 0.], data)
+        prediction.update(id="a", candidate_logits=[0., 0.])
+        self.assertEqual(prediction["count_probs"][1], 0)
+        report = metrics.compute_metrics([data], [prediction], decoder="auto")
+        self.assertAlmostEqual(report["joint_set_nll"], 10000 + math.log(2))
+        self.assertAlmostEqual(report["count_nll"], 10000)
+        self.assertEqual(report["count_nll_origins"], {"stable_count_log_probs": 1})
+        # Legacy prediction files still work, but their clipped origin is explicit.
+        del prediction["count_log_probs"]
+        old = metrics.compute_metrics([data], [prediction], decoder="auto")
+        self.assertEqual(old["set_nll_origins"], {"count_probabilities_clipped": 1})
+        self.assertLess(old["joint_set_nll"], 30)
+
+    def test_count_log_probabilities_cannot_contradict_stored_probabilities(self):
+        metrics = load_harness("multiselect_metrics")
+        sets = load_harness("set_distillation")
+        data = row("a", split="dev", target=[1, 0])
+        prediction = sets.structured_prediction([0., 0.], [0., 0., 0.], data)
+        prediction.update(id="a", candidate_logits=[0., 0.])
+        prediction["count_log_probs"][1] = -3.
+        with self.assertRaisesRegex(ValueError, "count_log_probs"):
+            metrics.compute_metrics([data], [prediction], decoder="auto")
+
+    def test_structured_marginal_and_map_metrics_must_describe_the_same_law(self):
+        metrics = load_harness("multiselect_metrics")
+        sets = load_harness("set_distillation")
+        data = row("a", split="dev", target=[1, 0], selection_mode="single")
+        prediction = sets.structured_prediction([0., 0.], [0., 0., 0.], data)
+        prediction.update(id="a", candidate_logits=[0., 0.])
+        with self.assertRaisesRegex(ValueError, "induced marginals"):
+            metrics.compute_metrics([data], [{**prediction, "p": [.99, .01]}], decoder="auto")
+        with self.assertRaisesRegex(ValueError, "set_map indices"):
+            metrics.compute_metrics([data], [{**prediction, "predicted_indices": [1]}], decoder="auto")
+
+    def test_legacy_nll_clipping_does_not_invent_map_count_mass(self):
+        metrics = load_harness("multiselect_metrics")
+        k = 60
+        data = row("a", split="dev", target=[1] * 30 + [0] * 30)
+        prediction = {"id": "a", "p": [.5] * k, "candidate_logits": [0.] * k,
+                      "count_probs": [float(m == 30) for m in range(k + 1)],
+                      "predicted_indices": list(range(30)), "decoder": "set_map"}
+        report = metrics.compute_metrics([data], [prediction], decoder="auto")
+        self.assertEqual(report["question_em"], 1)
+        self.assertAlmostEqual(report["joint_set_nll"], math.log(math.comb(60, 30)))
+
+    def test_rescoring_does_not_allow_inventing_a_checkpoint_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data, predictions = root / "dev.jsonl", root / "p.jsonl"
+            data.write_text(json.dumps(row("a", split="dev")) + "\n")
+            predictions.write_text(json.dumps({"id": "a", "p": [.6, .4]}) + "\n")
+            completed = subprocess.run([
+                sys.executable, "-I", str(ROOT / "harness/eval_multiselect.py"),
+                "--input", str(data), "--score-predictions", str(predictions),
+                "--checkpoint-id", "unverified", "--expected-split", "dev",
+                "--output", str(root / "output")], capture_output=True, text=True)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("saved predictions retain their provenance", completed.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

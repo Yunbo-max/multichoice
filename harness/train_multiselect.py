@@ -8,7 +8,9 @@ projects the output-head logits of the 255 legal single-token labels
 independent Bernoulli variables scored with sigmoid in the default BCE baseline.
 ``--objective set`` additionally learns an answer-count head and uses a coherent
 cardinality-conditioned distribution over subsets; its probabilities are not
-the raw sigmoid scores. See docs/multiteacher_set_distillation.md.
+the raw sigmoid scores. ``--set-loss`` selects exact set CE or information-matched
+marginal/count controls without changing that architecture or its decoder.
+See docs/multiteacher_set_distillation.md.
 
 Objective (per question, K candidates, logits s, target t in [0, 1]^K)::
 
@@ -108,6 +110,15 @@ def save_json(path: Path, value) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
     temporary.replace(path)
+
+
+def file_sha256(path):
+    """Record exact data/target/config bytes, without hashing model weights."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def text_value(value):
@@ -675,7 +686,7 @@ def load_count_head(wrapper, directory, required=True):
     return True
 
 
-def save_count_head(wrapper, directory, state=None):
+def save_count_head(wrapper, directory, state=None, loss_config=None):
     if wrapper.count_head is None:
         return
     directory = Path(directory)
@@ -689,6 +700,7 @@ def save_count_head(wrapper, directory, state=None):
         "max_candidates": len(wrapper.label_ids),
         "hidden_size": wrapper.count_head.in_features,
         "label_ids": wrapper.label_ids.cpu().tolist(),
+        "training_loss": loss_config,
     })
 
 
@@ -865,7 +877,9 @@ def validate_only(args):
                     report["train_plan"]["planned_steps"], args.max_steps)
 
     # Same target/provenance validation as the training path; no weights loaded.
-    target_report = {"mode": mode, "objective": args.objective}
+    target_report = {"mode": mode, "objective": args.objective,
+                     "set_loss": args.set_loss, "count_weight": args.count_weight,
+                     "count_target": args.count_target}
     try:
         target_errors, stats = prepare_training_targets(train_rows, args)
         errors.extend(target_errors)
@@ -1074,6 +1088,9 @@ def main():
     parser.add_argument("--train", type=Path, help="train JSONL")
     parser.add_argument("--dev", type=Path, help="dev JSONL")
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
+    parser.add_argument("--init-checkpoint-id",
+                        help="explicit immutable identity of loaded initial weights, including count head; "
+                             "operator attestation, not an automatic model-weight hash")
     parser.add_argument("--modules", type=Path, default=DEFAULT_MODULES)
     parser.add_argument("--output", type=Path, help="run directory")
     parser.add_argument("--target", choices=["gold", "file"], default=None,
@@ -1081,6 +1098,10 @@ def main():
     parser.add_argument("--target-file", type=Path)
     parser.add_argument("--target-missing", choices=["error", "gold"], default="error")
     parser.add_argument("--objective", choices=["bce", "set"], default="bce")
+    parser.add_argument("--set-loss", choices=["set_ce", "independent_marginal", "induced_marginal"],
+                        default="set_ce", help="set readout loss; all choices share head/decoder/targets")
+    parser.add_argument("--count-weight", type=float, default=1.0,
+                        help="count CE weight for marginal/count controls; exact set CE requires 1")
     parser.add_argument("--gold-weight", type=float, default=0.0,
                         help="fixed gold fraction in a file target; gold-only ignores this flag")
     parser.add_argument("--count-target", choices=["teacher", "gold"], default="teacher",
@@ -1127,6 +1148,16 @@ def main():
         parser.error("set objective does not mix in the legacy label-token graph penalty")
     if args.objective == "bce" and args.count_target != "teacher":
         parser.error("--count-target gold is a set-head ablation and requires --objective set")
+    if not math.isfinite(args.count_weight) or args.count_weight < 0:
+        parser.error("--count-weight must be finite and nonnegative")
+    if args.objective == "bce" and (args.set_loss != "set_ce" or args.count_weight != 1.0):
+        parser.error("--set-loss and --count-weight controls require --objective set")
+    if args.set_loss == "set_ce" and args.count_weight != 1.0:
+        parser.error("exact set CE requires --count-weight 1; use a marginal control to change its weight")
+    if args.count_target == "gold" and args.set_loss != "set_ce":
+        parser.error("--count-target gold is the legacy marginal-only control; omit it for --set-loss controls")
+    if args.init_checkpoint_id is not None and not args.init_checkpoint_id.strip():
+        parser.error("--init-checkpoint-id must be nonempty")
     if args.global_batch < 1 or args.epochs < 1:
         parser.error("--global-batch and --epochs must be positive")
     if args.world_size < 1:
@@ -1232,9 +1263,17 @@ def main():
                 raise ValueError(f"{output}/training.jsonl exists; use a new output or --resume")
         save_json(output / "training_config.json", {
             "train": str(args.train), "dev": str(args.dev), "model": str(args.model),
+            "train_sha256": file_sha256(args.train), "dev_sha256": file_sha256(args.dev),
+            "modules_sha256": file_sha256(args.modules),
+            "target_file_sha256": file_sha256(args.target_file) if args.target_file else None,
+            "loaded_model": str(load_path), "resume": str(args.resume) if args.resume else None,
+            "init_checkpoint_id": args.init_checkpoint_id or str(load_path.resolve()),
+            "checkpoint_identity_kind": "explicit" if args.init_checkpoint_id else "local_path",
+            "model_weight_hash_verified": False,
             "modules": str(args.modules), "output": str(output),
             "target_mode": mode, "target_file": str(args.target_file) if args.target_file else None,
             "objective": args.objective, "count_target": args.count_target,
+            "set_loss": args.set_loss, "count_weight": args.count_weight,
             "gold_weight": args.gold_weight, "allow_legacy_targets": args.allow_legacy_targets,
             "lambda_g": args.lambda_g, "graph": args.graph, "lr": args.lr,
             "global_batch": args.global_batch, "epochs": args.epochs,
@@ -1244,7 +1283,11 @@ def main():
             "limit": args.limit, "limit_dev": args.limit_dev, "seed": args.seed,
             "world_size": world, "planned_steps": planned_steps, "stop_step": stop_step,
             "eval_steps": sorted(eval_steps), "start_step": start_step,
-            "lora": args.lora, "targets": target_stats,
+            "grad_clip": args.grad_clip, "lora": args.lora,
+            "lora_r": args.lora_r, "lora_alpha": args.lora_alpha, "targets": target_stats,
+            "optimizer": {"name": "AdamW", "betas": [0.9, 0.999], "eps": 1e-8,
+                          "weight_decay": 0.0},
+            "schedule": "lr_factor(step, planned_steps); fresh optimizer per invocation",
         })
     torch.distributed.barrier()
 
@@ -1424,7 +1467,9 @@ def main():
                 base.save_pretrained(destination, state_dict=exported,
                                      safe_serialization=True, max_shard_size="5GB")
                 if args.objective == "set":
-                    save_count_head(wrapper, destination, count_state)
+                    save_count_head(wrapper, destination, count_state, loss_config={
+                        "set_loss": args.set_loss, "count_weight": args.count_weight,
+                        "count_target": args.count_target})
                 tokenizer.save_pretrained(destination)
                 save_json(output / f"export_check-{step:06d}.json", verify_export(destination))
             del state
@@ -1432,7 +1477,9 @@ def main():
             if rank == 0:
                 base.save_pretrained(destination)
                 tokenizer.save_pretrained(destination)
-                save_count_head(wrapper, destination)
+                save_count_head(wrapper, destination, loss_config={
+                    "set_loss": args.set_loss, "count_weight": args.count_weight,
+                    "count_target": args.count_target})
         torch.distributed.barrier()
 
     model.train()
@@ -1457,7 +1504,8 @@ def main():
             if args.objective == "set":
                 losses, bces, graphs = set_loss_terms(
                     result[0], result[1], [train_rows[i] for i in batch_indices],
-                    count_target=args.count_target)
+                    count_target=args.count_target, loss_family=args.set_loss,
+                    count_weight=args.count_weight)
             else:
                 losses, bces, graphs = loss_terms(
                     result, batch_targets, args.lambda_g, graph_cache)
@@ -1487,6 +1535,8 @@ def main():
             ("g_term" if args.objective == "bce" else "count_ce"):
                 float(sums[2] / rows_seen),
             "objective": args.objective,
+            "set_loss": args.set_loss if args.objective == "set" else None,
+            "count_weight": args.count_weight if args.objective == "set" else None,
             "grad": float(grad),
             "lr": optimizer.param_groups[0]["lr"],
             "seconds": seconds,
@@ -1584,6 +1634,7 @@ def main():
             "lambda_g": args.lambda_g,
             "graph": args.graph,
             "objective": args.objective, "count_target": args.count_target,
+            "set_loss": args.set_loss, "count_weight": args.count_weight,
             "gold_weight": args.gold_weight,
         })
         if writer is not None:

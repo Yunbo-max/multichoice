@@ -14,8 +14,13 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from set_distillation import allowed_counts, input_digest, log_partitions, structured_marginals
 
 
 PROBABILITY_EPSILON = 1e-12
@@ -195,6 +200,11 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
         ident, item = row["id"], by_id[row["id"]]
         target, mode, allow_empty = _target_and_protocol(row)
         k = len(target)
+        keys = [option.get("key", str(i)) for i, option in enumerate(row["options"])]
+        if "option_keys" in item and item["option_keys"] != keys:
+            raise ValueError(f"{ident}: prediction option identity/order mismatch")
+        if "input_digest" in item and item["input_digest"] != input_digest(row):
+            raise ValueError(f"{ident}: prediction input content/protocol mismatch")
         probs = _numbers(item.get("p", item.get("probs")), k, ident, "p", probabilities=True)
         scores = item.get("candidate_logits", item.get("logits", probs))
         scores = _numbers(scores, k, ident, "ranking scores")
@@ -215,7 +225,6 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
             selected = [i for i, probability in enumerate(probs) if probability >= threshold]
             method = "threshold_multi"
         bce, bce_origin = _mean_bce(target, probs, item)
-        keys = [option.get("key", str(i)) for i, option in enumerate(row["options"])]
         record = {
             "id": ident, "source": row.get("source"), "lang": row.get("lang"),
             "split": row.get("split"), "selection_mode": mode, "allow_empty": allow_empty,
@@ -231,7 +240,8 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
         for name in ("group_id", "question_id", "original_idx"):
             if name in row:
                 record[name] = row[name]
-        for name in ("logits", "candidate_logits", "input_tokens"):
+        for name in ("logits", "candidate_logits", "input_tokens", "input_digest",
+                     "checkpoint_id", "provenance"):
             if name in item:
                 record[name] = item[name]
         if item.get("decoder") == "set_map" and "count_probs" not in item:
@@ -249,6 +259,52 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
                     raise ValueError(f"{ident}: structured membership/count expectations disagree")
             record["count_probs"] = counts
             record["count_mode"] = max(range(k + 1), key=lambda i: (counts[i], -i))
+            if item.get("decoder") == "set_map" and "candidate_logits" in item:
+                support = set(allowed_counts(row))
+                induced = structured_marginals(scores, counts)
+                if any(abs(p - mu) > 1e-6 for p, mu in zip(probs, induced)):
+                    raise ValueError(f"{ident}: p must be the induced marginals of its structured readout")
+                log_counts = item.get("count_log_probs")
+                if log_counts is not None:
+                    if not isinstance(log_counts, list) or len(log_counts) != k + 1:
+                        raise ValueError(f"{ident}: count_log_probs needs K+1 entries")
+                    for m, value in enumerate(log_counts):
+                        if m not in support:
+                            if value is not None:
+                                raise ValueError(f"{ident}: forbidden count log probability must be null")
+                        elif (isinstance(value, bool) or not isinstance(value, (int, float))
+                              or not math.isfinite(value) or value > 1e-7
+                              or abs(math.exp(value) - counts[m]) > 1e-6):
+                            raise ValueError(f"{ident}: inconsistent count_log_probs")
+                    record["count_log_probs"] = log_counts
+                    record["set_nll_origin"] = "stable_count_log_probs"
+                else:
+                    log_counts = [math.log(max(PROBABILITY_EPSILON, p)) if m in support else None
+                                  for m, p in enumerate(counts)]
+                    record["set_nll_origin"] = "count_probabilities_clipped"
+                if len(selected) not in support:
+                    raise ValueError(f"{ident}: set_map prediction violates the count protocol")
+                centered = [score - max(scores) for score in scores]
+                logz = log_partitions(centered)
+                order = sorted(range(k), key=lambda i: (-centered[i], i))
+                prefix = [0.0]
+                for index in order:
+                    prefix.append(prefix[-1] + centered[index])
+                # Clipping is an explicitly labeled legacy NLL fallback, never
+                # a way to invent positive mass for MAP decoding.
+                map_logs = (log_counts if "count_log_probs" in record else
+                            [math.log(p) if p > 0 else -math.inf for p in counts])
+                map_count = max(sorted(support), key=lambda m: (map_logs[m] + prefix[m] - logz[m], -m))
+                if selected != sorted(order[:map_count]):
+                    raise ValueError(f"{ident}: supplied set_map indices do not match the declared structured law")
+                gold_logp = (log_counts[sum(target)]
+                             + math.fsum(s for s, y in zip(centered, target) if y)
+                             - logz[sum(target)])
+                predicted_logp = (log_counts[len(selected)]
+                                  + math.fsum(centered[i] for i in selected) - logz[len(selected)])
+                record["gold_set_nll"] = max(0.0, -gold_logp)
+                record["predicted_set_log_probability"] = min(0.0, predicted_logp)
+                record["predicted_set_probability"] = math.exp(min(0.0, predicted_logp))
         result.append(record)
     return result
 
@@ -256,7 +312,9 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
 def _report(records):
     n = len(records)
     tp = fp = fn = tn = exact = count_correct = violations = 0
-    count_error = expected_count_error = bce_sum = 0.0
+    count_error = expected_count_error = bce_sum = membership_brier = 0.0
+    set_nll = set_confidence_brier = 0.0
+    set_rows = 0
     oracle_exact = oracle_ties = oracle_strict = 0
     oracle_expected = 0.0
     count_nll = count_brier = count_mode_error = count_mean_error = 0.0
@@ -274,6 +332,11 @@ def _report(records):
         expected_count_error += abs(sum(record["p"]) - len(gold))
         violations += bool(record["protocol_violation"])
         bce_sum += record["bce"]
+        membership_brier += sum((p - y) ** 2 for p, y in zip(record["p"], record["target"])) / record["n_options"]
+        if "gold_set_nll" in record:
+            set_rows += 1
+            set_nll += record["gold_set_nll"]
+            set_confidence_brier += (record["predicted_set_probability"] - int(selected == gold)) ** 2
         diagnostic = record["oracle_gold_count"]
         oracle_exact += diagnostic["question_em"]
         oracle_ties += diagnostic["cutoff_tie"]
@@ -282,7 +345,8 @@ def _report(records):
         if "count_probs" in record:
             counts = record["count_probs"]
             count_rows += 1
-            count_nll -= math.log(max(PROBABILITY_EPSILON, counts[len(gold)]))
+            count_nll -= (record["count_log_probs"][len(gold)] if "count_log_probs" in record
+                          else math.log(max(PROBABILITY_EPSILON, counts[len(gold)])))
             count_brier += sum((p - int(i == len(gold))) ** 2 for i, p in enumerate(counts))
             count_mode_correct += record["count_mode"] == len(gold)
             count_mode_error += abs(record["count_mode"] - len(gold))
@@ -300,6 +364,10 @@ def _report(records):
         "marginal_expected_count_mae": expected_count_error / n if n else 0.0,
         "protocol_violation_count": violations, "protocol_violation_rate": violations / n if n else 0.0,
         "bce": bce_sum / n if n else 0.0,
+        "membership_brier": membership_brier / n if n else 0.0,
+        "joint_set_n_questions": set_rows,
+        "joint_set_nll": set_nll / set_rows if set_rows else None,
+        "set_confidence_brier": set_confidence_brier / set_rows if set_rows else None,
         "oracle_gold_count": {
             "uses_gold_count": True, "deployable": False,
             "description": "ranking diagnostic only: top gold_count options, not a model prediction",
@@ -339,6 +407,13 @@ def compute_metrics(rows, predictions, threshold=0.5, decoder="protocol"):
         "threshold_fitted_on_input": False,
         "probability_clipping_epsilon": PROBABILITY_EPSILON,
         "bce_origins": dict(Counter(record["bce_origin"] for record in records)),
+        "set_nll_origins": dict(Counter(record["set_nll_origin"] for record in records
+                                         if "set_nll_origin" in record)),
+        "count_nll_origins": dict(Counter("stable_count_log_probs" if "count_log_probs" in record
+                                           else "count_probabilities_clipped"
+                                           for record in records if "count_probs" in record)),
+        "membership_brier_reduction": "mean over candidates per question, then mean over questions",
+        "set_confidence_brier_event": "the model's predicted complete set equals the gold set; not joint-distribution Brier",
         "groups": {name: {key: _report(group) for key, group in sorted(values.items())}
                    for name, values in grouped.items()},
     })

@@ -13,6 +13,7 @@ from pathlib import Path
 
 TARGET_SCHEMA = "decision_set_target_v1"
 READOUT_SCHEMA = "decision_set_readout_v1"
+SET_LOSS_FAMILIES = ("set_ce", "independent_marginal", "induced_marginal")
 
 
 def allowed_counts(row):
@@ -201,6 +202,8 @@ def structured_prediction(scores, count_logits, row):
     # Tie: smallest m, then lowest option indices. Count mode alone is not MAP.
     best_m = max(support, key=lambda m: (log_rho[m] + prefix[m] - logz[m], -m))
     return {"p": structured_marginals(centered, rho), "count_probs": rho,
+            "count_log_probs": [log_rho.get(m) for m in range(k + 1)],
+            "predicted_set_log_probability": log_rho[best_m] + prefix[best_m] - logz[best_m],
             "predicted_indices": sorted(order[:best_m]), "decoder": "set_map"}
 
 
@@ -216,27 +219,159 @@ def scalar_set_cross_entropy(scores, count_logits, q, rho, allowed, normalize=Tr
     return value / len(scores) if normalize else value
 
 
-def torch_log_partitions(scores):
+def structured_log_marginals(scores, count_logits, allowed):
+    """Stable log P(i in S) and log P(i not in S), including rare events.
+
+    Unlike taking log of ``structured_marginals``, the log-domain reverse DP
+    retains probabilities smaller than floating-point exponentiation can hold.
+    Both branches are computed explicitly; no ``log(1 - rounded_probability)``
+    or numerical clipping is used. Runtime and memory are O(K^2).
+    """
+    if not scores or any(not math.isfinite(s) for s in scores):
+        raise ValueError("scores must be nonempty and finite")
+    k = len(scores)
+    support = _support(allowed, k)
+    if len(count_logits) < k + 1 or any(not math.isfinite(count_logits[m]) for m in support):
+        raise ValueError("count logits must be finite on the allowed count support")
+    centered = [v - max(scores) for v in scores]
+    table = log_partitions(centered, return_table=True)
+    normalizer = _logsum(count_logits[m] for m in support)
+    adjoint = {m: count_logits[m] - normalizer for m in support}
+    log_p, log_not_p = [None] * k, [None] * k
+    for j in range(k, 0, -1):
+        previous, included, excluded = {}, [], []
+        for m, mass in adjoint.items():
+            if m:
+                value = mass + centered[j - 1] + table[j - 1][m - 1] - table[j][m]
+                included.append(value)
+                previous[m - 1] = _logadd(previous.get(m - 1, -math.inf), value)
+            if m < j:
+                value = mass + table[j - 1][m] - table[j][m]
+                excluded.append(value)
+                previous[m] = _logadd(previous.get(m, -math.inf), value)
+        inn, out = _logsum(included), _logsum(excluded)
+        pair_normalizer = _logadd(inn, out)
+        log_p[j - 1], log_not_p[j - 1] = inn - pair_normalizer, out - pair_normalizer
+        adjoint = previous
+    return log_p, log_not_p
+
+
+def validate_set_loss_options(loss_family="set_ce", count_weight=1.0, count_target="teacher"):
+    """Reject controls that would silently change the mathematical comparison."""
+    if loss_family not in SET_LOSS_FAMILIES:
+        raise ValueError(f"unknown set loss family: {loss_family!r}")
+    if (isinstance(count_weight, bool) or not isinstance(count_weight, (int, float))
+            or not math.isfinite(count_weight) or count_weight < 0):
+        raise ValueError("count_weight must be finite and nonnegative")
+    if count_target not in ("teacher", "gold"):
+        raise ValueError("count_target must be teacher or gold")
+    if loss_family == "set_ce" and count_weight != 1:
+        raise ValueError("set_ce requires count_weight=1; weighting changes exact set cross-entropy")
+    if count_target == "gold" and loss_family != "set_ce":
+        raise ValueError("legacy count_target=gold cannot be combined with a moment control")
+
+
+def scalar_moment_cross_entropy(scores, count_logits, q, rho, allowed,
+                                loss_family="induced_marginal", count_weight=1.0,
+                                normalize=True):
+    """Dependency-free numerical oracle for the two information-matched controls.
+
+    Both controls receive the same q and rho as exact set CE. ``induced_marginal``
+    supervises the actual marginals of the normalized set predictor, whereas
+    ``independent_marginal`` supervises raw sigmoid scores and a separate count
+    head. Fitting those raw scores to q does not generally fit the structured
+    decoder's induced marginals to q, even at the auxiliary loss optimum.
+    """
+    validate_set_loss_options(loss_family, count_weight)
+    if loss_family == "set_ce":
+        raise ValueError("use scalar_set_cross_entropy for set_ce")
+    validate_set_targets(q, rho, allowed)
+    support = _support(allowed, len(scores))
+    if len(q) != len(scores) or len(count_logits) < len(scores) + 1:
+        raise ValueError("score/count dimensions do not match target")
+    if any(not math.isfinite(s) for s in scores) or any(
+            not math.isfinite(count_logits[m]) for m in support):
+        raise ValueError("scores and supported count logits must be finite")
+    if loss_family == "induced_marginal":
+        log_p, log_not_p = structured_log_marginals(scores, count_logits, support)
+    else:
+        log_p = [-_logadd(0.0, -s) for s in scores]
+        log_not_p = [-_logadd(0.0, s) for s in scores]
+    # Zero targets must not multiply -inf at deterministic protocol endpoints.
+    value = -sum(t * p for t, p in zip(q, log_p) if t > 0)
+    value -= sum((1 - t) * p for t, p in zip(q, log_not_p) if t < 1)
+    lognorm = _logsum(count_logits[m] for m in support)
+    value += count_weight * sum(rho[m] * (lognorm - count_logits[m]) for m in support)
+    return value / len(scores) if normalize else value
+
+
+def torch_log_partitions(scores, return_table=False):
     """Autograd-safe log DP: no logaddexp(-inf,-inf) boundary gradients."""
     import torch
     old = scores.new_zeros(1)
+    table = [old]
     for score in scores:
         middle = torch.logaddexp(old[1:], score + old[:-1])
         old = torch.cat((old[:1], middle, (score + old[-1]).reshape(1)))
-    return old
+        if return_table:
+            table.append(old)
+    return table if return_table else old
 
 
-def set_loss_terms(label_logits, count_logits, rows, count_target="teacher"):
-    """Per-row proper set CE, marginal BCE diagnostic, and count CE / K.
+def torch_structured_log_marginals(scores, log_count, allowed):
+    """Differentiable log inclusion/exclusion marginals of the set predictor.
+
+    ``log_count`` contains normalized count log-probabilities in the same order
+    as ``allowed``. It must retain its gradient: the induced-marginal objective
+    updates both candidate scores and the count head. The reverse DP stores only
+    structurally possible states, avoiding logaddexp(-inf, -inf) gradients.
+    """
+    import torch
+    supplied = list(allowed)
+    support = _support(supplied, len(scores))
+    if supplied != support or len(log_count) != len(support):
+        raise ValueError("log_count must align with sorted unique allowed counts")
+    centered = scores - scores.mean()
+    table = torch_log_partitions(centered, return_table=True)
+    adjoint = {m: log_count[i] for i, m in enumerate(support)}
+    log_p, log_not_p = [None] * len(scores), [None] * len(scores)
+    for j in range(len(scores), 0, -1):
+        previous, included, excluded = {}, [], []
+        for m, mass in adjoint.items():
+            if m:
+                value = mass + centered[j - 1] + table[j - 1][m - 1] - table[j][m]
+                included.append(value)
+                previous[m - 1] = (torch.logaddexp(previous[m - 1], value)
+                                   if m - 1 in previous else value)
+            if m < j:
+                value = mass + table[j - 1][m] - table[j][m]
+                excluded.append(value)
+                previous[m] = torch.logaddexp(previous[m], value) if m in previous else value
+        inn = torch.logsumexp(torch.stack(included), 0) if included else scores.new_tensor(-math.inf)
+        out = torch.logsumexp(torch.stack(excluded), 0) if excluded else scores.new_tensor(-math.inf)
+        pair_normalizer = torch.logaddexp(inn, out)
+        log_p[j - 1], log_not_p[j - 1] = inn - pair_normalizer, out - pair_normalizer
+        adjoint = previous
+    return torch.stack(log_p), torch.stack(log_not_p)
+
+
+def set_loss_terms(label_logits, count_logits, rows, count_target="teacher", *,
+                   loss_family="set_ce", count_weight=1.0):
+    """Per-row set objective, raw-score BCE diagnostic, and unweighted count CE/K.
+
+    All three loss families share architecture, q/rho targets and set-MAP decoder.
+    set_ce is exact set cross-entropy. independent_marginal uses sigmoid scores;
+    induced_marginal uses actual marginals of the normalized set distribution.
+    The moment controls add count_weight * CE(rho_target, rho_student)/K to
+    candidate-averaged BCE. set_ce requires count_weight=1 by definition.
 
     count_target='gold' replaces teacher cardinality with the gold one-hot while
     retaining teacher membership only in an auxiliary BCE objective. This is
     the explicit marginal-only ablation, not an incoherent set target.
     """
+    validate_set_loss_options(loss_family, count_weight, count_target)
     import torch
     import torch.nn.functional as F
-    if count_target not in ("teacher", "gold"):
-        raise ValueError("count_target must be teacher or gold")
     losses, bces, count_ces = [], [], []
     for i, row in enumerate(rows):
         k = len(row["options"])
@@ -252,10 +387,19 @@ def set_loss_terms(label_logits, count_logits, rows, count_target="teacher"):
             # This control keeps the same head and decoder, distilling only q.
             loss = bce + count_ce
         else:
-            centered = scores - scores.mean()
-            logz = torch_log_partitions(centered)
             count_ce = -(rho[index] * log_count).sum() / k
-            loss = count_ce + ((rho[index] * logz[index]).sum() - (q * centered).sum()) / k
+            if loss_family == "set_ce":
+                centered = scores - scores.mean()
+                logz = torch_log_partitions(centered)
+                loss = count_ce + ((rho[index] * logz[index]).sum() - (q * centered).sum()) / k
+            elif loss_family == "independent_marginal":
+                loss = bce + count_weight * count_ce
+            else:
+                log_p, log_not_p = torch_structured_log_marginals(scores, log_count, support)
+                positive, negative = q > 0, q < 1
+                marginal_ce = -(q[positive] * log_p[positive]).sum()
+                marginal_ce -= ((1 - q[negative]) * log_not_p[negative]).sum()
+                loss = marginal_ce / k + count_weight * count_ce
         losses.append(loss)
         bces.append(bce.detach())  # diagnostic sigmoid BCE, not structured marginals
         count_ces.append(count_ce)

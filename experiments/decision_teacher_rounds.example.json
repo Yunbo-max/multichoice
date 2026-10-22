@@ -1,0 +1,36 @@
+{
+  "experiment_id": "decision_teacher_rounds_pilot",
+  "repository": "..",
+  "train": "../data/multiselect_grouped_mixed/train.jsonl",
+  "dev": "../data/multiselect_grouped_mixed/dev.jsonl",
+  "modules": "../innerjev/configs/4B/modules.json",
+  "run_root": "../runs/decision_teacher_rounds_pilot",
+  "base_checkpoint": {
+    "path": "../models/frozen_grouped_gold",
+    "checkpoint_id": "REPLACE_WITH_sha256_DIGEST_OR_REPOSITORY_AT_IMMUTABLE_REVISION"
+  },
+  "rounds": 2,
+  "trajectory_seed": 43,
+  "probe_seeds": [43, 44, 45],
+  "python": "python",
+  "generate_python": "python",
+  "torchrun": "torchrun",
+  "training": {
+    "max_steps": 16,
+    "epochs": 1,
+    "global_batch": 64,
+    "world_size": 8,
+    "lr": 0.000002,
+    "gold_weight": 0.25,
+    "set_loss": "set_ce",
+    "count_weight": 1.0,
+    "max_input_tokens": 16384,
+    "max_batch_tokens": 16384
+  },
+  "teacher": {
+    "views": ["direct", "verify"],
+    "samples": 2,
+    "seed": 0,
+    "max_tokens": 4096
+  }
+}

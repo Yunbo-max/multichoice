@@ -33,6 +33,7 @@ and tokenizer files are needed). Output directories must be new or empty.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -234,7 +235,17 @@ def infer(args, rows):
                     item["candidate_logits"] = scores.cpu().tolist()
                 else:
                     item = {"p": torch.sigmoid(scores).cpu().tolist(), "logits": scores.cpu().tolist()}
-                item.update({"id": row["id"], "input_tokens": lengths[index]})
+                item.update({"id": row["id"], "input_tokens": lengths[index],
+                             "option_keys": [option["key"] for option in row["options"]],
+                             "input_digest": _local_module("set_distillation").input_digest(row),
+                             "checkpoint_id": args.checkpoint_id or str(args.model.resolve()),
+                             "provenance": {
+                                 "checkpoint_identity_kind": "explicit" if args.checkpoint_id else "local_path",
+                                 "model_weight_hash_verified": False,
+                                 "model_path": str(args.model.resolve()),
+                                 "decision_prompt_version": "sii_answer_slot_protocol_v1",
+                                 "mode": "direct_no_thinking",
+                             }})
                 predictions.append(item)
     report = {**export, **_prompt_report(labels, lengths, batches),
               "load_seconds": load_seconds, "inference_seconds": time.monotonic() - begin,
@@ -267,6 +278,8 @@ def main(argv=None):
     source.add_argument("--score-predictions", "--predictions", dest="score_predictions", type=Path,
                         help="score saved JSONL probabilities; no model dependencies")
     parser.add_argument("--output", type=Path, help="new directory for predictions.jsonl and metrics.json")
+    parser.add_argument("--checkpoint-id",
+                        help="explicit immutable identity for native inference; supplied identity is not a weight hash check")
     parser.add_argument("--expected-split", choices=("test", "dev", "train", "any"), default="test")
     parser.add_argument("--threshold", type=float, default=0.5, help="frozen beforehand; never fitted on input")
     parser.add_argument("--threshold-provenance", default="fixed beforehand (CLI value or default 0.5)")
@@ -280,6 +293,8 @@ def main(argv=None):
     parser.add_argument("--max-batch-tokens", type=int, default=8192)
     args = parser.parse_args(argv)
     try:
+        if args.checkpoint_id is not None and (not args.model or not args.checkpoint_id.strip()):
+            raise ValueError("--checkpoint-id requires --model and a nonempty identity; saved predictions retain their provenance")
         metrics.validate_threshold(args.threshold)
         if min(args.batch_size, args.max_input_tokens, args.max_batch_tokens) < 1:
             raise ValueError("batch size and token budgets must be positive")
@@ -287,7 +302,11 @@ def main(argv=None):
             raise ValueError("--check-prompts requires --validate-only and --model")
         rows = metrics.read_dataset(args.input, None if args.expected_split == "any" else args.expected_split)
         config = {"input": str(args.input), "expected_split": args.expected_split,
+                  "input_sha256": hashlib.sha256(args.input.read_bytes()).hexdigest(),
                   "model": str(args.model) if args.model else None,
+                  "checkpoint_id": args.checkpoint_id or (str(args.model.resolve()) if args.model else None),
+                  "checkpoint_identity_kind": "explicit" if args.checkpoint_id else "local_path" if args.model else None,
+                  "model_weight_hash_verified": False,
                   "score_predictions": str(args.score_predictions) if args.score_predictions else None,
                   "threshold": args.threshold, "threshold_provenance": args.threshold_provenance,
                   "threshold_fitted_on_input": False, "decoder": args.decoder,

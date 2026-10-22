@@ -166,6 +166,43 @@ This differs from BCE's $\sigma(s_i)-q_i$. Fixed teacher weights and offline
 sampling have no student-parameter derivative terms. An adaptive or on-policy
 extension would require a new gradient analysis, rather than deleting terms.
 
+### Information-matched objective controls
+
+`--objective set` now supports three `--set-loss` choices. They use the same
+candidate scores, independently learned count head, teacher targets, and set-MAP
+decoder. Define the student's **actual** inclusion marginal
+
+$$\mu_i=\sum_m\rho_\theta(m)P_s(i\in S\mid |S|=m).$$
+
+| `--set-loss` | Objective, with the existing per-K normalization |
+|---|---|
+| `set_ce` (default) | $[-q^\top s+\sum_m t_m\log Z_m(s)+H(t,\rho_\theta)]/K$ |
+| `independent_marginal` | $[\sum_i\mathrm{BCE}(q_i,\sigma(s_i))+\lambda H(t,\rho_\theta)]/K$ |
+| `induced_marginal` | $[\sum_i\mathrm{BCE}(q_i,\mu_i)+\lambda H(t,\rho_\theta)]/K$ |
+
+Here t is the coherent teacher/gold mixture count law and
+`--count-weight` sets lambda (default 1). Exact `set_ce` requires lambda=1;
+changing it would no longer be the stated joint cross-entropy. The moment
+controls require `--count-target teacher`; `--count-target gold` remains the
+distinct legacy raw-BCE plus hard-gold-count control.
+
+The induced-marginal control is the stronger comparison. Supervising raw
+sigmoid(s) and the count head separately does not guarantee that the structured
+decoder's actual marginals match q. The induced loss backpropagates through both
+the scores and count probabilities, using a log-domain dynamic program for
+log(mu) and log(1-mu); it does not detach, clip probabilities, or take the log of
+an already rounded sigmoid.
+
+For feasible moments realizable by this student family, exact set CE and the
+induced-marginal/count control can share a population optimum. A win over
+marginal-only BCE can reflect extra count information; a reproducible win over
+this induced control would support an optimization or inductive-bias benefit.
+Neither outcome is guaranteed. In single-choice tasks induced BCE is generally
+different from categorical CE (at K=2 it is twice the normalized set CE).
+Give competing losses equal learning-rate selection budgets on dev, in addition
+to matching model, data, examples, update counts and inference. Do not attribute
+a loss-scale or step-size effect to joint modeling.
+
 For fixed feasible targets, this objective is convex in the free score/count
 logits: the score Hessian is a nonnegative weighted sum of conditional indicator
 covariances, and the count Hessian is `diag(rho_theta)-rho_theta*rho_theta^T`.
@@ -340,7 +377,9 @@ Minimum informative comparisons:
 | Gold set model | `--objective set --target gold` | Count head, structured likelihood and decoder alone |
 | Mean membership KD | `--objective bce --target file` | Ordinary multi-teacher BCE |
 | Same-head marginal-only KD | `--objective set --count-target gold --target file` | Same architecture/decoder; BCE on mixed membership plus gold count CE |
-| Full set KD | `--objective set --count-target teacher --target file` | Adds coherent teacher membership/count transfer |
+| Independent marginal + soft count KD | `--objective set --set-loss independent_marginal --target file` | Same teacher q,t and count head, auxiliary sigmoid marginals |
+| Induced marginal + soft count KD | `--objective set --set-loss induced_marginal --target file` | Same q,t, head and decoder; supervises the actual set-model marginals |
+| Full set KD | `--objective set --set-loss set_ce --count-target teacher --target file` | Exact coherent set likelihood; compare against both matched-information controls |
 | Single view × 4 chains | Full set KD with one manifest teacher | Same total sampling budget as two views × 2 chains |
 
 The marginal-only control has a separately stated objective, BCE(q_mix,s) plus
@@ -349,6 +388,11 @@ they are the moments of one teacher law.
 
 Report overall and per-source/per-mode exact-set accuracy, micro-F1, membership
 Brier/BCE, cardinality NLL/Brier/mode accuracy, count error, and teacher coverage.
+Structured exports also report exact gold-set NLL and the Brier score for the
+binary event that the model's predicted complete set is correct. The latter is
+not the Brier score of the complete distribution over all subsets. Stable count
+log probabilities preserve very large NLLs instead of hiding them behind a
+probability floor; legacy prediction files explicitly report a clipped origin.
 The evaluator separately labels gold-count top-k as an oracle ranking diagnostic.
 No oracle count is supplied to the model or operational decoder. Independent-BCE
 thresholds may be chosen on dev and frozen before test; set MAP has no threshold.
@@ -357,6 +401,12 @@ thresholds may be chosen on dev and frozen before test; set MAP has no threshold
 does not reproducibly improve over matched marginal KD / gold set controls,
 do not claim useful extra teacher count information. Repeat promising effects
 across seeds and use paired question/group-level uncertainty for comparisons.
+
+The separate [teacher-generation exploration](decision_teacher_generations.md)
+tests whether a stronger direct student remains a useful next-generation
+reasoning teacher. It has planned fixed/refreshed trajectories, matched-init
+teaching probes and result audits; it is not evidence that recursive degradation
+already occurs in this implementation.
 
 ## 8. Verification and remaining work
 
