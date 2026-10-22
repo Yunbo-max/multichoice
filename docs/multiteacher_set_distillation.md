@@ -4,6 +4,11 @@ Status: implemented research candidate, **not a trained or validated model resul
 The existing gold-BCE run and its published data remain an archival v1 reference.
 Rebuild group-separated data and rerun matched baselines before making a method claim.
 
+The [review corrections](review_corrections_2026-10-22.md) supersede the inaccurate
+claims in the initial simplification review. The implementation below still uses
+the independent count head. Alpha-mixture and empirical-map targets are proposed
+ablations, not implemented commands or demonstrated results.
+
 ## 1. Research question and nearest work
 
 Can a one-pass decision LM learn a better **complete answer set** when self-teachers
@@ -181,6 +186,36 @@ Transformer parameters is convex. Common shifts remain unidentifiable.
 * Uniformly shifting all scores leaves the structured distribution unchanged.
   The implementation centers scores to improve numerical stability.
 
+The last statement assumes the independent count law is held fixed. A future PB
+mixture would depend on the absolute score shift and must restore that shift when
+computing count probabilities. The free-logit convexity statement above is also
+specific to the independent-head objective; it does not transfer to a mixture.
+
+### Information retained, and a corrected loss-gap statement
+
+For an arbitrary teacher Q and an independent BCE student with probabilities b,
+
+$$L_{\mathrm{BCE}}(q;b)-L_{\mathrm{set}}(Q;P)
+=I(Q)+\sum_iD_{\mathrm{KL}}(\operatorname{Ber}(q_i)\|\operatorname{Ber}(b_i))
+-D_{\mathrm{KL}}(Q\|P),$$
+
+where $I(Q)=\sum_i h(q_i)-H(Q)$ is total correlation. Even when b=q, matching
+first moments does not remove the residual joint KL. The set objective reads
+only q and rho_T and therefore cannot transfer every teacher co-occurrence rule.
+
+Under per-example free optimization of the independent-head family, feasible
+targets, and any needed boundary limits, the optimum P* is the maximum-entropy
+joint matching q and rho_T. Consequently the optimal summed-BCE minus set-CE
+gap is I(P*), not generally I(Q). This characterization does not guarantee a
+shared Transformer reaches that optimum, and it is not an accuracy theorem.
+See the linked review corrections for a four-option counterexample and proof.
+
+For a proposed PB-based count law, alpha=0 gives ordinary BCE only when all
+counts 0,...,K are permitted. Conditioning on nonempty sets gives conditional
+BCE; conditioning on count one gives categorical CE. Preserve the same K scaling
+when comparing these endpoints. Do not combine unrelated q and rho targets:
+feasibility is required for the expression to remain a teacher joint CE.
+
 CE is equivalent to forward $D_{\rm KL}(Q_T\|P_\theta)$ up to teacher entropy.
 No additional reference-model KL is mathematically required. A base-model anchor
 would be a separately motivated continual-learning ablation, not a prerequisite.
@@ -340,6 +375,9 @@ PyTorch-specific tests exercise autograd, mixed-protocol batches, extreme logits
 and count-head save/load. They explicitly skip if PyTorch is absent. Passing
 scalar tests is not a substitute for these tests, native Qwen forward checks,
 FSDP export/reload, or actual teacher/student GPU runs. The development host for
-this patch has no PyTorch/model weights/GPU, so those native checks remain open.
+this patch has no PyTorch/model weights/GPU, so it did not execute those native checks.
+An external follow-up review reports passing all 85 tests on a PyTorch host and
+real tokenizer validation; it was not rerun on this development host. See the
+[verification record](verification_2026-10-22.md) for attribution and scope.
 The original `--resume` path is weight/step continuation with a fresh optimizer,
 not an exact optimizer-state resume; this patch does not change that behavior.

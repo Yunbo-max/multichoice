@@ -1,5 +1,10 @@
 # Review + mathematical simplification proposal
 
+> **2026-10-22 数学修正：本页是原审阅的历史记录，不应直接作为实现依据。**
+> 后续核对发现：完整 score 梯度漏了 `-q_i`；`alpha=0 -> BCE` 缺少答案协议条件；total-correlation 等式缺少残余 KL；任意 shuffled-count 可能构造不合法且无下界的目标。power-tilt 归一化项的符号、empirical-map 的独立性解释和 alpha 的实验解读也需要修正。
+> **请以 [审阅修正与实现约束](review_corrections_2026-10-22.md) 中的正确公式、反例和实验约束为准。**
+> 原文保留在下方以便逐项对照。原审阅报告的验证结果保持其原始归属；新增 mixture/empirical-map 方案尚未实现。
+
 （这条评论是给 ChatGPT 改代码用的：先给审阅结论，再给一个“去掉 count head、用一参数数学变形”的具体方案和实现清单。）
 
 ## 0. 我已经做过的验证
@@ -245,3 +250,4 @@ $$\mathcal L=-\frac1C\sum_c\left[\log\rho_\theta(|S_c|)+\sum_{i\in S_c}s_i-\log 
 ## 9. 一句话总结
 
 **不要删 count head 了事；数学上 count 边际就是 $\rho_\theta$，scores 改不动它。正确的化简是把 head 换成一参数的 $\alpha$-mixture（$\alpha=0$ 严格退化为 BCE），教师侧用 per-chain MAP set 的经验分布替代 conditional-independence DP。这样删掉 $(d+1)(K+1)$ 的 head 和 independence 假设，只新增 1 个标量和一次排序，同时保留 coherent set CE、exact marginal 和 set MAP。**
+
