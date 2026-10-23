@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "teacher-membership-pilot-base4-1gpu-20261022",
+  "description": "Plumbing pilot on base Qwen3.5-4B: generation via .venv-startlux (vLLM 0.19.1), readout via .venv-sii; 100 rows, 2 chains.",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nM=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B\nD=$R/data/multiselect_grouped_multi\nRUN=$R/runs/qz/teachers_pilot_base_20261022\nLOG=$R/logs/qz/teacher_membership_pilot_base.log\nmkdir -p \"$R/logs/qz\" \"$RUN\"\ncd \"$R\"\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\n{\nfor VIEW in direct verify; do\n  echo \"===== VIEW $VIEW $(date -Is)\"\n  MODEL=\"$M\" CHECKPOINT_ID=\"base-qwen3.5-4b-20261022\" TEACHER_ID=\"base:$VIEW\" TEACHER_VIEW=\"$VIEW\" \\\n  SAMPLES=2 SHARDS=1 SPLITS=\"train dev\" LIMIT=100 DATA_DIR=\"$D\" RUN_ROOT=\"$RUN\" \\\n  MAX_TOKENS=4096 MAX_MODEL_LEN=8192 READOUT_MAX_INPUT_TOKENS=8192 \\\n  Q_TRANSFORM=membership TRUNCATED_POLICY=exclude \\\n  PYTHON_GENERATE=\"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-startlux/bin/python\" PYTHON_READOUT=\"$V/bin/python\" \\\n  bash \"$R/harness/run_sii_style_teacher.sh\" || { echo \"VIEW $VIEW FAILED rc=$?\"; exit 3; }\ndone\n} > \"$LOG\" 2>&1\nstatus=$?\necho \"JOB EXIT=$status\"\nexit $status\n",
+  "max_running_time_ms": "7200000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}

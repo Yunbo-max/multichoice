@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "teacher-readout-debug-1gpu-20261022",
+  "description": "Readout-only debug on 2 train rows, include truncated; log to repo",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nmkdir -p \"$R/logs/qz\"\ncd \"$R\"\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nREASONING=0 READOUT=1 SHARDS=1 SAMPLES=2 SPLITS=\"train\" LIMIT=2 \\\nMODEL=\"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B\" CHECKPOINT_ID=\"base-qwen3.5-4b-20261022\" TEACHER_ID=\"base:direct\" TEACHER_VIEW=direct \\\nDATA_DIR=\"$R/data/multiselect_grouped_multi\" RUN_ROOT=\"$R/runs/qz/teachers_pilot_base_20261022\" \\\nQ_TRANSFORM=membership TRUNCATED_POLICY=include MAX_MODEL_LEN=8192 READOUT_MAX_INPUT_TOKENS=8192 \\\nREADOUT_BATCH=2 DEVICE=cuda PYTHON_READOUT=\"$V/bin/python\" \\\nbash \"$R/harness/run_sii_style_teacher.sh\" > \"$R/logs/qz/teacher_readout_debug.log\" 2>&1\nstatus=$?\necho \"JOB EXIT=$status\"\nexit $status\n",
+  "max_running_time_ms": "3600000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}

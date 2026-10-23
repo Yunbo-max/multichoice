@@ -1,0 +1,203 @@
+{
+  "train": {
+    "n": 28751,
+    "by_source": {
+      "cmb_exam_multi": 23981,
+      "multirc": 4770
+    },
+    "by_lang": {
+      "zh": 23981,
+      "en": 4770
+    },
+    "option_counts": {
+      "2": 305,
+      "3": 717,
+      "4": 813,
+      "5": 24554,
+      "6": 1043,
+      "7": 597,
+      "8": 300,
+      "9": 208,
+      "10": 102,
+      "11": 55,
+      "12": 23,
+      "13": 14,
+      "14": 8,
+      "15": 6,
+      "16": 5,
+      "21": 1
+    },
+    "positive_counts": {
+      "1": 1290,
+      "2": 6807,
+      "3": 9246,
+      "4": 8080,
+      "5": 3211,
+      "6": 89,
+      "7": 13,
+      "8": 8,
+      "9": 5,
+      "10": 2
+    },
+    "selection_modes": {
+      "multi": 28751
+    },
+    "groups": 24407
+  },
+  "dev": {
+    "n": 2042,
+    "by_source": {
+      "cmb_exam_multi": 1708,
+      "multirc": 334
+    },
+    "by_lang": {
+      "zh": 1708,
+      "en": 334
+    },
+    "option_counts": {
+      "2": 24,
+      "3": 92,
+      "4": 50,
+      "5": 1756,
+      "6": 60,
+      "7": 32,
+      "8": 11,
+      "9": 12,
+      "10": 4,
+      "11": 1
+    },
+    "positive_counts": {
+      "1": 104,
+      "2": 504,
+      "3": 640,
+      "4": 559,
+      "5": 229,
+      "6": 5,
+      "7": 1
+    },
+    "selection_modes": {
+      "multi": 2042
+    },
+    "groups": 1737
+  },
+  "test": {
+    "n": 2140,
+    "by_source": {
+      "cmb_exam_multi": 1190,
+      "multirc": 950
+    },
+    "by_lang": {
+      "zh": 1190,
+      "en": 950
+    },
+    "option_counts": {
+      "2": 57,
+      "3": 159,
+      "4": 169,
+      "5": 1377,
+      "6": 169,
+      "7": 109,
+      "8": 54,
+      "9": 24,
+      "10": 13,
+      "11": 8,
+      "14": 1
+    },
+    "positive_counts": {
+      "1": 322,
+      "2": 613,
+      "3": 641,
+      "4": 417,
+      "5": 137,
+      "6": 4,
+      "7": 6
+    },
+    "selection_modes": {
+      "multi": 2140
+    },
+    "groups": 1273
+  },
+  "dropped": {
+    "unparseable_answer": 290,
+    "multirc_all_negative": 25,
+    "multirc_too_few_candidates": 5
+  },
+  "max_options": 21,
+  "split_policy": {
+    "deduplicated_train_rows": 0,
+    "excluded_dev_extra_test_rows": 0,
+    "excluded_train_holdout_rows": 31,
+    "allocation": {
+      "requested_dev_rows": 2000,
+      "actual_dev_rows": 2002,
+      "actual_train_rows": 28751,
+      "by_source": {
+        "cmb_exam_multi": {
+          "requested_dev_rows": 1668,
+          "actual_dev_rows": 1668,
+          "actual_train_rows": 23981,
+          "groups": 25649,
+          "dev_groups": 1668,
+          "train_groups": 23981,
+          "max_group_rows": 1
+        },
+        "multirc": {
+          "requested_dev_rows": 332,
+          "actual_dev_rows": 334,
+          "actual_train_rows": 4770,
+          "groups": 456,
+          "dev_groups": 30,
+          "train_groups": 426,
+          "max_group_rows": 31
+        }
+      },
+      "method": "source row quotas; deterministic whole-group approximate allocation",
+      "seed": 42
+    },
+    "additional_dev_rows": 40,
+    "actual_dev_rows_with_extra": 2042,
+    "overlap": {
+      "train_dev": 0,
+      "train_test": 0,
+      "dev_test": 0,
+      "full_question": {
+        "train_dev": 0,
+        "train_test": 0,
+        "dev_test": 0
+      },
+      "group": {
+        "train_dev": 0,
+        "train_test": 0,
+        "dev_test": 0
+      },
+      "group_by_source": {},
+      "definitions": {
+        "full_question": "source + full whitespace-normalized question + full state",
+        "group": "connected shared group_id or full MultiRC passage within source; CMB per-question groups",
+        "scope": "exact normalized matches only; no semantic near-duplicate guarantee"
+      }
+    }
+  },
+  "cmb_question_mode": "multi",
+  "overlap": {
+    "train_dev": 0,
+    "train_test": 0,
+    "dev_test": 0,
+    "full_question": {
+      "train_dev": 0,
+      "train_test": 0,
+      "dev_test": 0
+    },
+    "group": {
+      "train_dev": 0,
+      "train_test": 0,
+      "dev_test": 0
+    },
+    "group_by_source": {},
+    "definitions": {
+      "full_question": "source + full whitespace-normalized question + full state",
+      "group": "connected shared group_id or full MultiRC passage within source; CMB per-question groups",
+      "scope": "exact normalized matches only; no semantic near-duplicate guarantee"
+    }
+  }
+}

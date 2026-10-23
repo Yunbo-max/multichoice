@@ -132,6 +132,29 @@ SII single-label softmax) has been run on this unified dataset.
 The 58.63% dev EM above is not a result of the new set objective or multi-teacher
 distillation, and must not be directly compared with a rebuilt split.
 
+## Set-loss controls (gold targets, 3 seeds)
+
+A group-separated multi-select split was rebuilt
+(`--cmb-question-mode multi`: 28,751 train / 2,042 dev / 2,140 test, no exact
+train/dev/test overlap) and four objectives were run with gold targets, 4×H100,
+450 steps, seeds 43/44/45. Full per-seed tables and paired deltas are in
+`docs/seed_results_2026-10-23.md`.
+
+| Arm | Question EM | F1 | Count mode acc | Count MAE |
+|---|---:|---:|---:|---:|
+| **BCE** | **0.5615 ± 0.0041** | **0.9058 ± 0.0021** | 0.6103 ± 0.0042 | 0.4680 ± 0.0048 |
+| `set_ce` | 0.5573 ± 0.0021 | 0.9017 ± 0.0005 | 0.6152 ± 0.0045 | 0.4629 ± 0.0118 |
+| `independent_marginal` | 0.5273 ± 0.0057 | 0.8959 ± 0.0009 | 0.5810 ± 0.0069 | 0.5224 ± 0.0127 |
+| `induced_marginal` | 0.5606 ± 0.0063 | 0.9024 ± 0.0010 | **0.6324 ± 0.0122** | **0.4337 ± 0.0147** |
+
+`set_ce` is lower than BCE on exact-set EM and F1 in all three seeds. The
+induced-marginal control ties BCE on EM (paired mean -0.0010, mixed sign) but is
+lower on F1; its seed-consistent gain is count calibration. `induced_marginal`
+beats `set_ce` on count NLL/Brier/mode/MAE in every seed. The defensible claim
+is therefore **count-calibrated set supervision**, not a superior joint set
+objective. The seed-43 `set_ce` 8-GPU run (EM 0.5588, F1 0.9006) is consistent
+with the 4-GPU pilot (0.5563 / 0.9012).
+
 ## Self-teacher
 
 The teacher is the same base model with thinking enabled. The goal is to
