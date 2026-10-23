@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "teacher-membership-pilot-1gpu-20261022",
+  "description": "Plumbing pilot: direct+verify membership readout, 200 train/dev rows, 2 chains, gold405 checkpoint (archival split; coverage only)",
+  "framework": "pytorch",
+  "command": "set -euo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nCKPT=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/ms_gold/v1/checkpoint-405\nD=$R/data/multiselect_grouped_multi\nRUN=$R/runs/qz/teachers_pilot_20261022\nLOG=$R/logs/qz/teacher_membership_pilot.log\nmkdir -p \"$R/logs/qz\" \"$RUN\"\ncd \"$R\"\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nfor VIEW in direct verify; do\n  MODEL=\"$CKPT\" CHECKPOINT_ID=\"sha256:b3d3e78e8c7697d0f5793051621b0b2f226958f26618fadaf63ed7727c976282\" TEACHER_ID=\"gold405:$VIEW\" TEACHER_VIEW=\"$VIEW\" \\\n  SAMPLES=2 SHARDS=1 SPLITS=\"train dev\" LIMIT=200 DATA_DIR=\"$D\" RUN_ROOT=\"$RUN\" \\\n  MAX_TOKENS=4096 MAX_MODEL_LEN=16384 READOUT_MAX_INPUT_TOKENS=16384 \\\n  Q_TRANSFORM=membership TRUNCATED_POLICY=exclude \\\n  PYTHON_GENERATE=\"$V/bin/python\" PYTHON_READOUT=\"$V/bin/python\" \\\n  bash \"$R/harness/run_sii_style_teacher.sh\" || exit $?\ndone\necho \"JOB EXIT=0\"\n",
+  "max_running_time_ms": "10800000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}
