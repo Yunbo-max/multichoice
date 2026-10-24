@@ -1,7 +1,8 @@
-# SetJev v2 Gate 3 smoke: cold-base-start count anchor is unstable
+# SetJev v2 Gate 3 smoke: cold-base-start count anchor is noisy early but converges and wins
 
-Date: 2026-10-24. Status: empirical negative result on the cold-start variant;
-fix is a BCE warm start (plan modification 3).
+Date: 2026-10-24. Status: cold anchor is **noisy early, converges, and beats the
+full count head** on a matched 5k comparison. The BCE warm start (plan
+modification 3) is retained as a refinement, not as a required fix.
 
 ## What was run
 
@@ -10,7 +11,7 @@ fix is a BCE warm start (plan modification 3).
 base `Qwen3.5-4B` (the candidate scores are the frozen answer-slot head projected
 from untrained internal layers).
 
-## Result: unstable training
+## Result: noisy early training that converges
 
 Compared against the matched non-anchor reference (`grouped_set_ce_4gpu_s44`,
 gold `set_ce`, full 28k, no anchor):
@@ -21,8 +22,29 @@ gold `set_ce`, full 28k, no anchor):
 | grad norm | 5.6–32.8 | **139–828 (10–25×)** |
 | count CE | ~0.32, flat | 0.3–6.45, oscillating |
 
-No NaN / non-finite values, but loss and count CE alternate every step, the
-signature of two coupled dynamics fighting rather than converging.
+No NaN / non-finite values. The early oscillation is real but transient: the
+run converges to a healthy final state.
+
+## Final result: the cold anchor wins on the matched 5k comparison
+
+Matched pair — `set_ce`, 5k, seed 43, 79 steps, cold base `Qwen3.5-4B`, only
+`--count-anchor` differs:
+
+| | no anchor (`soft_gold_set_ce_5k_seed43`, step 64) | anchor (`gate3-set_ce-anchor-5k-s43`, step 79) |
+|---|---:|---:|
+| question EM | 0.3937 | **0.4584 (+6.5pt)** |
+| F1 | 0.8554 | **0.8747** |
+| precision | 0.7820 | **0.8659 (+8.4pt)** |
+| recall | 0.9439 | 0.8837 |
+| final loss | — | 0.293 |
+| final count CE | — | 0.208 |
+| final grad | — | ~16–20 |
+
+The anchor fixes the over-selection: precision rises 8.4pt (recall drops as the
+model stops marking nearly every candidate). This is the count-calibration effect
+modification 2 was designed for. The early large gradient was not fatal — the
+same was observed for plain BCE (step-1 grad 190.8, step-12 grad 1076) while it
+still trained successfully, and `grad_clip=1.0` bounds the actual update.
 
 ## Root cause (verified, not a code bug)
 
@@ -56,4 +78,6 @@ count prior and the residual head only has to learn the residual correction.
 
 The generator now emits `--model <bce final>` for all four Gate 3 arms, so
 "residual count head vs full count head" is compared on top of the same BCE
-warm start. The cold anchor smoke is kept as the negative datapoint.
+warm start. The warm-start is expected to reduce the early noise (a smaller
+initial count CE) and possibly raise the final EM above the cold anchor's
+0.4584; the cold anchor is kept as the matched baseline.
