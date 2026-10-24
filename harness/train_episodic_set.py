@@ -105,11 +105,19 @@ def one_episode_batch(
     teacher_force_prob: float,
     train: bool,
     carry_memory: bool = True,
+    rule_switch_prob: float = 0.0,
 ) -> dict:
-    if not 0.0 <= teacher_force_prob <= 1.0:
-        raise ValueError("teacher_force_prob must be within [0, 1]")
+    if not 0.0 <= teacher_force_prob <= 1.0 or not 0 <= rule_switch_prob <= 1:
+        raise ValueError("forcing and rule-switch probabilities must be within [0, 1]")
     current, rule, demos = sample_batch(batch, width, rng, device)
     mask = torch.ones_like(current, dtype=torch.bool)
+    # A new rule may be observed only AFTER a selected action is executed.
+    switch_times = [
+        rng.randint(1, horizon - 1) if rng.random() < rule_switch_prob else -1
+        for _ in range(batch)
+    ]
+    new_rules = [rng.choice([d for d in DIRECTIONS if d != int(rule[i])])
+                 for i in range(batch)]
     memory = agent.prime(agent.empty_memory(batch, device=device), demos)
     episode_all = torch.ones(batch, dtype=torch.bool, device=device)
     first_correct = later_correct = later_total = total_exact = 0.0
@@ -154,6 +162,21 @@ def one_episode_batch(
         executed = executed.detach()
         # The only available post-action observation is the new visible state.
         after = observation_features(executed, t + 1, horizon)
+        to_switch = [i for i in range(batch) if switch_times[i] == t + 1]
+        if to_switch:
+            demo_start = torch.zeros(
+                len(to_switch), width, dtype=executed.dtype, device=device,
+            )
+            for j in range(len(to_switch)):
+                demo_start[j, rng.randrange(width)] = 1
+            next_rule = torch.tensor(
+                [new_rules[i] for i in to_switch], device=device, dtype=torch.long,
+            )
+            demo_end = shift_sets(demo_start, next_rule)
+            # External feedback reveals a fresh input/output demonstration
+            # for the NEXT decision; no future oracle target is used.
+            after[to_switch] = demo_features(demo_start, demo_end)
+            rule[to_switch] = next_rule
         memory = agent.observe(
             memory, query, executed, mask, after,
             done=torch.full(
@@ -195,6 +218,7 @@ def training(args: argparse.Namespace) -> None:
                 agent, batch=args.batch_size, width=args.width, horizon=args.horizon,
                 rng=rng, device=device, teacher_force_prob=tf_prob,
                 train=True, carry_memory=True,
+                rule_switch_prob=args.rule_switch_prob,
             )
             if not torch.isfinite(result["loss"]):
                 raise FloatingPointError("nonfinite episodic set loss")
@@ -214,6 +238,7 @@ def training(args: argparse.Namespace) -> None:
                         agent, batch=args.batch_size, width=args.width,
                         horizon=args.horizon, rng=eval_rng, device=device,
                         teacher_force_prob=0.0, train=False, carry_memory=carry,
+                        rule_switch_prob=args.rule_switch_prob,
                     )
                     for _ in range(args.eval_batches)
                 ]
@@ -265,6 +290,7 @@ def evaluating(args: argparse.Namespace) -> None:
                     horizon=args.horizon, rng=rng,
                     device=torch.device(args.device), teacher_force_prob=0,
                     train=False, carry_memory=carry,
+                    rule_switch_prob=args.rule_switch_prob,
                 )
                 for _ in range(args.eval_batches)
             ]
@@ -294,11 +320,13 @@ def parse():
     train.add_argument("--lr", type=float, default=1e-3)
     train.add_argument("--teacher-force-start", type=float, default=1.0)
     train.add_argument("--teacher-force-end", type=float, default=0.25)
+    train.add_argument("--rule-switch-prob", type=float, default=0.25)
     evaluate = sub.add_parser("evaluate")
     evaluate.add_argument("--checkpoint", type=Path, required=True)
     evaluate.add_argument("--horizon", type=int, default=6)
     evaluate.add_argument("--batch-size", type=int, default=16)
     evaluate.add_argument("--eval-batches", type=int, default=32)
+    evaluate.add_argument("--rule-switch-prob", type=float, default=0.25)
     for item in (train, evaluate):
         item.add_argument("--device", default="cpu")
         item.add_argument("--seed", type=int, default=43)
@@ -309,6 +337,8 @@ def parse():
         parser.error("positive epochs/batches required")
     if getattr(args, "eval_batches", 1) < 1:
         parser.error("eval-batches must be positive")
+    if not 0 <= args.rule_switch_prob <= 1:
+        parser.error("rule-switch-prob must be within [0,1]")
     if hasattr(args, "teacher_force_start") and not (
         0 <= args.teacher_force_end <= args.teacher_force_start <= 1
     ):
