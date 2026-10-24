@@ -24,7 +24,7 @@ OUT_DIR = ROOT / "qz_episodic"
 R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish"
 V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
 MODEL = f"{R}/runs/qz/grouped_bce_4gpu_s44/v1/final"
-DATA = f"{R}/runs/episodic_data"
+DATA = f"{R}/runs/episodic_data_causal_v2"
 
 WORKSPACE = "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6"
 PROJECT = "project-160ccb20-98ab-4538-a847-01d1f83d5b0f"
@@ -100,7 +100,7 @@ def cache_job():
 
 
 def train_job(seed):
-    out = f"{R}/runs/episodic_qwen_s{seed}"
+    out = f"{R}/runs/episodic_qwen_causal_v2_s{seed}"
     command = (
         _env()
         + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
@@ -124,8 +124,8 @@ def train_job(seed):
 
 def online_eval_job(seed):
     """Execute model predictions, not oracle logged actions, on untouched held-out test episodes."""
-    head = f"{R}/runs/episodic_qwen_s{seed}/best.pt"
-    out = f"{R}/runs/episodic_qwen_s{seed}/online_eval.json"
+    head = f"{R}/runs/episodic_qwen_causal_v2_s{seed}/best.pt"
+    out = f"{R}/runs/episodic_qwen_causal_v2_s{seed}/online_eval.json"
     command = (
         _env()
         + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
