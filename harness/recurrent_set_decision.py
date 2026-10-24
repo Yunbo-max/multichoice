@@ -202,9 +202,10 @@ class RecurrentSetDecision(nn.Module):
         self.position_emb = nn.Embedding(config.max_options, d)
         self.candidate_proj = nn.Sequential(nn.Linear(4, d), nn.Tanh())
         self.state_cell = nn.GRUCell(d, d)
-        # Non-recurrent control ("mlp"): distinct per-step layers, no weight
-        # sharing and no temporal state. Same per-step width as the GRU cell, so
-        # the recurrent vs mlp comparison isolates shared-weight recurrence.
+        # Diagnostic unshared feed-forward control ("mlp"): new layer each
+        # step and no carried latent state, but still feeds back set scores.
+        # This control is NOT parameter- or FLOP-matched to the GRU and cannot
+        # isolate recurrence without additional compute-matched experiments.
         self.state_stack = nn.ModuleList(
             [nn.Sequential(nn.Linear(d, d), nn.Tanh()) for _ in range(config.max_steps)]
         )
