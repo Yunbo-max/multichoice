@@ -106,8 +106,8 @@ class FrozenPromptCacheTests(unittest.TestCase):
         encoder._slot_vectors(["c", "d"])
         self.assertEqual(calls, ["a", "b", "c", "d"])
         self.assertLessEqual(len(encoder._slot_cache), 3)
-        encoder._slot_vectors(["a"])  # evicted oldest
-        self.assertEqual(calls[-1], "a")
+        encoder._slot_vectors(["b"])  # least-recently-used was evicted
+        self.assertEqual(calls[-1], "b")
 
 
 if __name__ == "__main__":
