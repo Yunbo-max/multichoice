@@ -38,6 +38,7 @@ class EpisodicSetConfig:
     max_options: int = 32
     inner_steps: int = 4
     feedback: str = "set"
+    require_semantic_actions: bool = False
 
     def __post_init__(self):
         if self.context_dim < 1 or self.latent_dim < 4 or self.max_options < 2:
@@ -73,6 +74,7 @@ class EpisodicSetDecision(nn.Module):
         )
         self.transition_context = nn.Linear(config.context_dim, d)
         self.transition_action = nn.Linear(config.max_options, d, bias=False)
+        self.transition_option = nn.Linear(config.context_dim, d, bias=False)
         self.transition_observation = nn.Linear(config.context_dim, d)
         self.transition_observed_flag = nn.Linear(1, d, bias=False)
         self.transition_norm = nn.LayerNorm(d)
@@ -155,6 +157,7 @@ class EpisodicSetDecision(nn.Module):
         candidate_mask: Tensor,
         post_observation: Optional[Tensor] = None,
         *,
+        option_features: Optional[Tensor] = None,
         done: Optional[Tensor] = None,
     ) -> Tensor:
         """Update persistent memory after executing the selected action set.
@@ -191,13 +194,32 @@ class EpisodicSetDecision(nn.Module):
             flag = context.new_ones((b, 1))
         if not bool(torch.isfinite(context).all() and torch.isfinite(observed).all()):
             raise ValueError("nonfinite environment observation")
-        action = F.pad(
-            executed_set.float() * candidate_mask.float(),
-            (0, self.config.max_options - executed_set.shape[1]),
-        )
+        if option_features is not None:
+            if option_features.shape != (
+                b, executed_set.shape[1], self.config.context_dim
+            ):
+                raise ValueError("option_features must be B x K x context_dim")
+            if option_features.device != memory.device or not bool(torch.isfinite(option_features).all()):
+                raise ValueError("option features must be finite and on the memory device")
+            # Uses option meanings, not letter/index identity. Invariant when
+            # the options and executed mask are permuted together.
+            selected = (executed_set * candidate_mask).float()
+            action_feature = (
+                self.transition_option(option_features.float())
+                * selected[..., None]
+            ).sum(dim=1) / selected.sum(dim=1, keepdim=True).clamp_min(1.0)
+        else:
+            if self.config.require_semantic_actions:
+                raise ValueError("changing-option tasks require semantic option_features")
+            # Fixed-index action spaces only (e.g. grid-cell selections).
+            action = F.pad(
+                executed_set.float() * candidate_mask.float(),
+                (0, self.config.max_options - executed_set.shape[1]),
+            )
+            action_feature = self.transition_action(action)
         signal = self.transition_norm(
             torch.tanh(self.transition_context(context.float()))
-            + self.transition_action(action)
+            + action_feature
             + self.transition_observation(observed)
             + self.transition_observed_flag(flag)
         )
