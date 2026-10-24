@@ -1,0 +1,12 @@
+{
+  "step": 450,
+  "checkpoint": "checkpoint-450",
+  "question_em": 0.5558276199804114,
+  "bce": 0.33220852230564635,
+  "f1": 0.9016469139602894,
+  "precision": 0.8951711491442543,
+  "recall": 0.9082170542635659,
+  "threshold": null,
+  "decoder": "set_map",
+  "selection": "dev question EM; tie-break lower marginal BCE"
+}

@@ -1,0 +1,14 @@
+{
+  "teachers": [
+    {
+      "id": "gold-bce43:direct",
+      "path": "direct/q/membership/include/merged/sii_teacher_train.jsonl",
+      "weight": 1.0
+    },
+    {
+      "id": "gold-bce43:verify",
+      "path": "verify/q/membership/include/merged/sii_teacher_train.jsonl",
+      "weight": 1.0
+    }
+  ]
+}

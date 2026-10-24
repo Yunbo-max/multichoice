@@ -1,0 +1,75 @@
+{
+  "schema": "decision_set_target_audit_v1",
+  "target_schema": "decision_set_target_v1",
+  "source_split": "dev",
+  "purpose": "teacher_quality_audit",
+  "input": {
+    "path": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/data/multiselect_grouped_multi_5k/dev.jsonl",
+    "sha256": "c5723bb1ec05474135e40131a936781ffacd5d1ae35a07d52770480d9e82c20a",
+    "rows": 1000,
+    "rows_by_split": {
+      "dev": 1000
+    }
+  },
+  "manifest": {
+    "path": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/manifest_dev.json",
+    "sha256": "a440948b77f280159ec8363222172cab23bef88d331b37eb2102e1b2895af579"
+  },
+  "weighting": "fixed normalized teacher weights; uniform valid-chain weights within each teacher",
+  "conditioning": "each Bernoulli product conditioned on protocol counts before mixture",
+  "joint_approximation": "conditional independence within each chain; not empirical teacher joint",
+  "missing_policy": "error",
+  "selected_rows": 1000,
+  "retained_rows": 1000,
+  "dropped_rows": 0,
+  "coverage": 1.0,
+  "coverage_by_source": {
+    "cmb_exam_multi": {
+      "selected": 836,
+      "retained": 836,
+      "dropped": 0,
+      "coverage": 1.0
+    },
+    "multirc": {
+      "selected": 164,
+      "retained": 164,
+      "dropped": 0,
+      "coverage": 1.0
+    }
+  },
+  "dropped": [],
+  "teachers": [
+    {
+      "id": "gold-bce43:direct",
+      "path": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/direct/q/membership/include/merged/sii_teacher_dev.jsonl",
+      "weight": 1.0,
+      "normalized_weight": 0.5,
+      "file_sha256": "92394f05ed68a53f1ade11e404740310784c351e961d02d39ecdb9bf206b2aca",
+      "file_rows": 1000,
+      "selected_ids_present": 1000,
+      "unused_file_rows": 0,
+      "retained_valid_chains": 2000,
+      "retained_requested_chains": 2000,
+      "included_truncated_chains": 218,
+      "excluded_truncated_chains": 0,
+      "retained_rows_without_input_digest": 0
+    },
+    {
+      "id": "gold-bce43:verify",
+      "path": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/verify/q/membership/include/merged/sii_teacher_dev.jsonl",
+      "weight": 1.0,
+      "normalized_weight": 0.5,
+      "file_sha256": "ffa6df469c13c04f60e11c37f68e8828c35871d18570112e3f8458a3cceef35f",
+      "file_rows": 1000,
+      "selected_ids_present": 1000,
+      "unused_file_rows": 0,
+      "retained_valid_chains": 2000,
+      "retained_requested_chains": 2000,
+      "included_truncated_chains": 259,
+      "excluded_truncated_chains": 0,
+      "retained_rows_without_input_digest": 0
+    }
+  ],
+  "output": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/targets_dev.jsonl",
+  "validate_only": false
+}

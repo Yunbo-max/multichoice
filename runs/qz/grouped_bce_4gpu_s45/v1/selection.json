@@ -1,0 +1,19 @@
+{
+  "step": 360,
+  "checkpoint": "checkpoint-360",
+  "question_em": 0.5636630754162586,
+  "bce": 0.293537336579617,
+  "f1": 0.9081949814267304,
+  "precision": 0.888592197003412,
+  "recall": 0.9286821705426357,
+  "threshold": 0.5,
+  "decoder": "protocol_or_threshold",
+  "selection": "dev question EM; tie-break lower marginal BCE",
+  "best_threshold_by_question_em": {
+    "threshold": 0.53,
+    "precision": 0.8936907092305376,
+    "recall": 0.92015503875969,
+    "f1": 0.9067298143762891,
+    "question_em": 0.5690499510284035
+  }
+}

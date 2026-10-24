@@ -1,0 +1,34 @@
+{
+  "steps": 450,
+  "planned_steps": 450,
+  "start_step": 0,
+  "world_size": 4,
+  "trainable_parameters": 3313500160,
+  "selected": {
+    "step": 360,
+    "checkpoint": "checkpoint-360",
+    "question_em": 0.564152791380999,
+    "bce": 0.29436443659960887,
+    "f1": 0.904939493112109,
+    "precision": 0.8887726117506354,
+    "recall": 0.9217054263565891,
+    "threshold": 0.5,
+    "decoder": "protocol_or_threshold",
+    "selection": "dev question EM; tie-break lower marginal BCE",
+    "best_threshold_by_question_em": {
+      "threshold": 0.55,
+      "precision": 0.8969891487085435,
+      "recall": 0.909922480620155,
+      "f1": 0.9034095282074963,
+      "question_em": 0.5675808031341821
+    }
+  },
+  "final_export": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/grouped_bce_4gpu/v1/final",
+  "lambda_g": 0.0,
+  "graph": "none",
+  "objective": "bce",
+  "count_target": "teacher",
+  "set_loss": "set_ce",
+  "count_weight": 1.0,
+  "gold_weight": 0.0
+}

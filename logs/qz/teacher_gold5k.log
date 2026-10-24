@@ -1,0 +1,14 @@
+===== VIEW direct 2026-10-23T16:06:28+00:00
+[2026-10-23T16:37:45] [merge-reasoning] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/direct/reasoning/dev.jsonl (2000 chains)
+[2026-10-23T16:37:49] [merge-reasoning] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/direct/reasoning/train.jsonl (10000 chains)
+[2026-10-23T17:20:07] [merge-readout] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/direct/q/membership/include/merged/sii_teacher_dev.jsonl (1000 ids)
+[2026-10-23T17:20:07] [merge-readout] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/direct/q/membership/include/merged/sii_teacher_train.jsonl (5000 ids)
+[2026-10-23T17:20:08] [summary] wrote /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/direct/q/membership/include/merged/sii_teacher_summary.json
+Teacher view direct complete; membership outputs: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/direct/q/membership/include/merged
+===== VIEW verify 2026-10-23T17:20:08+00:00
+[2026-10-23T17:47:15] [merge-reasoning] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/verify/reasoning/dev.jsonl (2000 chains)
+[2026-10-23T17:47:20] [merge-reasoning] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/verify/reasoning/train.jsonl (10000 chains)
+[2026-10-23T18:33:16] [merge-readout] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/verify/q/membership/include/merged/sii_teacher_dev.jsonl (1000 ids)
+[2026-10-23T18:33:16] [merge-readout] 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/verify/q/membership/include/merged/sii_teacher_train.jsonl (5000 ids)
+[2026-10-23T18:33:17] [summary] wrote /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/verify/q/membership/include/merged/sii_teacher_summary.json
+Teacher view verify complete; membership outputs: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/teacher_gold5k_20261023/verify/q/membership/include/merged

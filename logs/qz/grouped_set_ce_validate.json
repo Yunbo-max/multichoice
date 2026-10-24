@@ -1,0 +1,193 @@
+{
+  "mode": "validate-only",
+  "ok": true,
+  "model": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B",
+  "modules": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/innerjev/configs/4B/modules.json",
+  "target_mode": "gold",
+  "max_input_tokens": 8192,
+  "max_batch_tokens": 8192,
+  "world_size": 8,
+  "global_batch": 64,
+  "errors": [],
+  "warnings": [],
+  "labels": {
+    "count": 255,
+    "first": [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H"
+    ],
+    "last": [
+      "JR",
+      "JS",
+      "JT"
+    ],
+    "token_ids_first": [
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ]
+  },
+  "train": {
+    "n": 28751,
+    "by_source": {
+      "cmb_exam_multi": 23981,
+      "multirc": 4770
+    },
+    "by_lang": {
+      "en": 4770,
+      "zh": 23981
+    },
+    "option_counts": {
+      "2": 305,
+      "3": 717,
+      "4": 813,
+      "5": 24554,
+      "6": 1043,
+      "7": 597,
+      "8": 300,
+      "9": 208,
+      "10": 102,
+      "11": 55,
+      "12": 23,
+      "13": 14,
+      "14": 8,
+      "15": 6,
+      "16": 5,
+      "21": 1
+    },
+    "positive_counts": {
+      "1": 1290,
+      "2": 6807,
+      "3": 9246,
+      "4": 8080,
+      "5": 3211,
+      "6": 89,
+      "7": 13,
+      "8": 8,
+      "9": 5,
+      "10": 2
+    },
+    "target_sum_min": 1,
+    "target_sum_max": 10,
+    "prompts": {
+      "n": 28751,
+      "mean": 170.86790024694793,
+      "p50": 114,
+      "p90": 386,
+      "p99": 663,
+      "max": 905,
+      "total": 4912623,
+      "over_max_input": 0
+    },
+    "micro_plan": {
+      "batches": 450,
+      "micro_counts": {
+        "8": 450
+      },
+      "problems": [],
+      "problem_count": 0
+    }
+  },
+  "train_plan": {
+    "planned_steps": 450,
+    "warmup_steps": 14,
+    "eval_every": 45
+  },
+  "dev": {
+    "n": 2042,
+    "by_source": {
+      "cmb_exam_multi": 1708,
+      "multirc": 334
+    },
+    "by_lang": {
+      "en": 334,
+      "zh": 1708
+    },
+    "option_counts": {
+      "2": 24,
+      "3": 92,
+      "4": 50,
+      "5": 1756,
+      "6": 60,
+      "7": 32,
+      "8": 11,
+      "9": 12,
+      "10": 4,
+      "11": 1
+    },
+    "positive_counts": {
+      "1": 104,
+      "2": 504,
+      "3": 640,
+      "4": 559,
+      "5": 229,
+      "6": 5,
+      "7": 1
+    },
+    "target_sum_min": 1,
+    "target_sum_max": 7,
+    "prompts": {
+      "n": 2042,
+      "mean": 175.41185112634673,
+      "p50": 115,
+      "p90": 429,
+      "p99": 672,
+      "max": 779,
+      "total": 358191,
+      "over_max_input": 0
+    },
+    "micro_plan": {
+      "batches": 32,
+      "micro_counts": {
+        "8": 32
+      },
+      "problems": [],
+      "problem_count": 0
+    }
+  },
+  "targets": {
+    "mode": "gold",
+    "objective": "set",
+    "set_loss": "set_ce",
+    "count_weight": 1.0,
+    "count_target": "teacher",
+    "source": "gold",
+    "from_file": 0,
+    "missing": 0,
+    "missing_mode": "error",
+    "gold_weight": 1.0,
+    "extra_ids": 0
+  },
+  "modules_check": {
+    "ok": true,
+    "model_type": "qwen3_5",
+    "architecture": "Qwen3_5ForConditionalGeneration",
+    "modules": 176,
+    "missing": [],
+    "nonlinear": [],
+    "no_weight": [],
+    "trainable_parameters": 3313500160,
+    "expected_trainable_parameters": 3313500160,
+    "trainable_matches": true,
+    "output_head_shape": [
+      248320,
+      2560
+    ],
+    "input_embedding_shape": [
+      248320,
+      2560
+    ],
+    "ties_embeddings": true
+  }
+}

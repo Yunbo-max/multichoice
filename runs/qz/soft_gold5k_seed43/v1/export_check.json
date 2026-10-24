@@ -1,0 +1,10 @@
+{
+  "path": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/soft_gold5k_seed43/v1/final",
+  "ok": true,
+  "errors": [],
+  "files": {
+    "shards": 3,
+    "missing_shards": [],
+    "bytes": 10370086167
+  }
+}

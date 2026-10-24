@@ -1,0 +1,27 @@
+{
+  "steps": 79,
+  "planned_steps": 79,
+  "start_step": 0,
+  "world_size": 4,
+  "trainable_parameters": 3314155776,
+  "selected": {
+    "step": 48,
+    "checkpoint": "checkpoint-48",
+    "question_em": 0.24387855044074436,
+    "bce": 0.4689671592033637,
+    "f1": 0.8115173083144613,
+    "precision": 0.6963908939478067,
+    "recall": 0.9722480620155038,
+    "threshold": null,
+    "decoder": "set_map",
+    "selection": "dev question EM; tie-break lower marginal BCE"
+  },
+  "final_export": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/soft_teacher_set_ce_5k_seed43/v1/final",
+  "lambda_g": 0.0,
+  "graph": "none",
+  "objective": "set",
+  "count_target": "teacher",
+  "set_loss": "set_ce",
+  "count_weight": 1.0,
+  "gold_weight": 0.0
+}

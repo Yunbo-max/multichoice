@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "teacher-gold5k-8gpu-20261023",
+  "description": "Teacher targets for 5k train + 1k dev, direct+verify, 2 chains, 8192 tokens, include truncated",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish\nVS=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-startlux\nV2=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nCKPT=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/grouped_bce_4gpu/v1/final\nD=$R/data/multiselect_grouped_multi_5k\nRUN=$R/runs/qz/teacher_gold5k_20261023\nLOG=$R/logs/qz/teacher_gold5k.log\nmkdir -p \"$R/logs/qz\" \"$RUN\"\ncd \"$R\"\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\n{\nfor VIEW in direct verify; do\n  echo \"===== VIEW $VIEW $(date -Is)\"\n  MODEL=\"$CKPT\" CHECKPOINT_ID=\"sha256:ed5e1eee1b4aeeefecf7ae2ad0eacb5dfdade03ba294fab4f3fd05ec38ebfd6d\" TEACHER_ID=\"gold-bce43:$VIEW\" TEACHER_VIEW=\"$VIEW\" \\\n  SHARDS=8 SAMPLES=2 SPLITS=\"train dev\" LIMIT=0 DATA_DIR=\"$D\" RUN_ROOT=\"$RUN\" \\\n  MAX_TOKENS=8192 MAX_MODEL_LEN=16384 READOUT_MAX_INPUT_TOKENS=16384 MAX_PHASE_SECONDS=39600 \\\n  Q_TRANSFORM=membership TRUNCATED_POLICY=include  \\\n  PYTHON_GENERATE=\"$VS/bin/python\" PYTHON_READOUT=\"$V2/bin/python\" \\\n  bash \"$R/harness/run_sii_style_teacher.sh\" || { echo \"VIEW $VIEW FAILED rc=$?\"; exit 3; }\ndone\n} > \"$LOG\" 2>&1\nstatus=$?\necho \"JOB EXIT=$status\"\nexit $status\n",
+  "max_running_time_ms": "43200000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "7166bd2e-6cbe-4bd9-be38-762d11003e7f",
+      "shm_gi": 1800
+    }
+  ]
+}

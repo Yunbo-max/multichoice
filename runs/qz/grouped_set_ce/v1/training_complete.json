@@ -1,0 +1,27 @@
+{
+  "steps": 450,
+  "planned_steps": 450,
+  "start_step": 0,
+  "world_size": 8,
+  "trainable_parameters": 3314155776,
+  "selected": {
+    "step": 450,
+    "checkpoint": "checkpoint-450",
+    "question_em": 0.558765915768854,
+    "bce": 0.3345883892677899,
+    "f1": 0.9006297035785593,
+    "precision": 0.8922702373706635,
+    "recall": 0.9091472868217054,
+    "threshold": null,
+    "decoder": "set_map",
+    "selection": "dev question EM; tie-break lower marginal BCE"
+  },
+  "final_export": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/grouped_set_ce/v1/final",
+  "lambda_g": 0.0,
+  "graph": "none",
+  "objective": "set",
+  "count_target": "teacher",
+  "set_loss": "set_ce",
+  "count_weight": 1.0,
+  "gold_weight": 0.0
+}

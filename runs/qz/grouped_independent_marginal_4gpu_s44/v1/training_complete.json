@@ -1,0 +1,27 @@
+{
+  "steps": 450,
+  "planned_steps": 450,
+  "start_step": 0,
+  "world_size": 4,
+  "trainable_parameters": 3314155776,
+  "selected": {
+    "step": 405,
+    "checkpoint": "checkpoint-405",
+    "question_em": 0.5239960822722821,
+    "bce": 0.35942785373662306,
+    "f1": 0.8956234020153406,
+    "precision": 0.8695969626168224,
+    "recall": 0.9232558139534883,
+    "threshold": null,
+    "decoder": "set_map",
+    "selection": "dev question EM; tie-break lower marginal BCE"
+  },
+  "final_export": "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/grouped_independent_marginal_4gpu_s44/v1/final",
+  "lambda_g": 0.0,
+  "graph": "none",
+  "objective": "set",
+  "count_target": "teacher",
+  "set_loss": "independent_marginal",
+  "count_weight": 1.0,
+  "gold_weight": 0.0
+}

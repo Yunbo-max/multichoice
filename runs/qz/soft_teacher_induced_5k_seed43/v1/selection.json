@@ -1,0 +1,12 @@
+{
+  "step": 64,
+  "checkpoint": "checkpoint-64",
+  "question_em": 0.20225269343780608,
+  "bce": 0.4746439430530624,
+  "f1": 0.8057827658360281,
+  "precision": 0.6816865143224976,
+  "recall": 0.9851162790697674,
+  "threshold": null,
+  "decoder": "set_map",
+  "selection": "dev question EM; tie-break lower marginal BCE"
+}

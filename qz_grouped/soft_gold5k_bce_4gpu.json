@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "soft-gold5k-bce-4gpu-20261023",
+  "description": "Gold BCE on the same 5k stratified subset used for teacher targets; 4xH100, 1 seed",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nM=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B\nD=$R/data/multiselect_grouped_multi_5k\nDEV=$R/data/multiselect_grouped_multi/dev.jsonl\nOUT=$R/runs/qz/soft_gold5k_seed43/v1\nLOG=$R/logs/qz/soft_gold5k_seed43.log\nmkdir -p \"$R/logs/qz\" \"$OUT\"\ncd \"$R\"\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\n\"$V/bin/torchrun\" --standalone --nnodes 1 --nproc_per_node 4 \\\n  \"$R/harness/train_multiselect.py\" \\\n  --train \"$D/train.jsonl\" --dev \"$DEV\" \\\n  --model \"$M\" --modules \"$R/innerjev/configs/4B/modules.json\" \\\n  --target gold --objective bce --output \"$OUT\" \\\n  --lr 2e-6 --global-batch 64 --epochs 1 \\\n  --max-input-tokens 8192 --max-batch-tokens 8192 \\\n  --eval-every-frac 0.2 --lambda-g 0 --graph none --seed 43 --expect-trainable 3313500160 \\\n  > \"$LOG\" 2>&1\nstatus=$?; echo \"JOB EXIT=$status\"; exit $status\n",
+  "max_running_time_ms": "7200000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "8a53ac21-299a-4dee-85e9-9c04a544cf8d",
+      "shm_gi": 900
+    }
+  ]
+}
