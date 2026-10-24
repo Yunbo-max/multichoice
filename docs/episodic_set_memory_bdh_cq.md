@@ -195,7 +195,79 @@ This is a **wiring example**, not a trained Qwen episodic checkpoint or a
 complete production agent. The episodic head must be trained on real
 sequential trajectories before its predictions can be trusted.
 
-## 7. Explicit non-claims / remaining gates
+## 7. Real frozen-Qwen episode data pipeline (now implemented)
+
+To support actual time-evolving prompts with Qwen3.5-4B, these additional
+files are included:
+
+- harness/build_episodic_features.py: real JSONL episode logs -> tensor cache
+- harness/train_episodic_features.py: chronological logged-action replay,
+  multi-step BPTT, exact-set NLL, carry vs reset validation.
+
+Unlike the synthetic rule-shift runner, this uses the genuine frozen Qwen
+answer-slot encoder and option semantics; it requires **real episodes** from
+an environment with recorded actions and post-action observations.
+
+Input JSONL: one episode per line. Example (illustrative only):
+
+    {
+      "episode_id": "task-001",
+      "demonstrations": ["known rule/input -> output"],
+      "steps": [
+        {
+          "step_index": 0,
+          "decision": {
+            "state": "state actually observed at t=0",
+            "question": "Which operations are appropriate now?",
+            "options": [
+              {"key":"a","desc":"Inspect log"},
+              {"key":"b","desc":"Retry operation"}
+            ],
+            "selection_mode":"multi",
+            "allow_empty":false
+          },
+          "action_ids":["inspect-log-v1","retry-op-v1"],
+          "gold":[1,0],
+          "executed_set":[1,0],
+          "post_observation":"Observed log response after inspect action",
+          "done":true
+        }
+      ]
+    }
+
+The builder whitelists the decision prompt fields and does NOT pass gold,
+executed_set, or future feedback into Qwen's current decision prompt. Each
+action must have a stable *semantic* ID, not merely its display letter.
+Embeddings of option descriptions are stored for changing-menu transitions.
+
+Train/dev logs must be split by **whole episode** before feature extraction:
+
+    python harness/build_episodic_features.py \
+      --input episodes_train.jsonl --model MODEL_DIR \
+      --model-identity BCE_S44_FINAL --output train_episodes.pt --device cuda
+
+    python harness/build_episodic_features.py \
+      --input episodes_dev.jsonl --model MODEL_DIR \
+      --model-identity BCE_S44_FINAL --output dev_episodes.pt --device cuda
+
+    python harness/train_episodic_features.py \
+      --train-cache train_episodes.pt --dev-cache dev_episodes.pt \
+      --output runs/episodic_qwen_s43 --device cuda --seed 43 \
+      --epochs 5 --inner-steps 4 --latent-dim 128
+
+The offline trainer never rearranges chronological steps. It uses logged
+executed actions and actual post-action feedback as memory inputs, while
+gold is used only to evaluate/optimize the selected set. It rejects
+train/dev episode-ID overlap, invalid count supports, missing done flags,
+and changing action menus without semantic embeddings **on every step**.
+
+**Critical:** Its reported exact set accuracy is *offline teacher-forced
+replay accuracy*, NOT successful on-policy interaction or ARC accuracy. The
+rule-shift environment is still the only included genuinely on-policy
+rollout harness. Connecting the trained episodic head to a real environment
+executor, then evaluating it online, is a separate required validation gate.
+
+## 8. Explicit non-claims / remaining gates
 
 - BDH-CQ exact architecture and weights are unavailable.
 - Qwen backbone remains frozen here; the included episodic *toy* runner does
