@@ -57,7 +57,7 @@ def _base(name, description, command, max_running_time_ms="7200000", priority=4)
 
 def _env():
     return (
-        "set -uo pipefail\n"
+        "set -euo pipefail\n"
         f"R={R}\nV={V}\nMODEL={MODEL}\n"
         "export HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\n"
         "export PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\n"
@@ -68,6 +68,8 @@ def cache_job():
     command = (
         _env()
         + f'mkdir -p "{DATA}" "{R}/logs/qz"\ncd "{R}"\n'
+        + 'grep -q "oracle_rule_before_decision" harness/gen_text_episodes.py || '
+        + '{ echo "STALE CODE: causal generator fix missing; abort"; exit 9; }\n'
         + f'"$V/bin/python" harness/gen_text_episodes.py '
         + f'--output "{DATA}/train.jsonl" --episodes 1024 --horizon 6 '
         + f"--rule-switch-prob 0.25 --seed 43\n"
