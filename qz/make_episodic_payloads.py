@@ -118,10 +118,35 @@ def train_job(seed):
     )
 
 
+
+def online_eval_job(seed):
+    """Execute model predictions, not oracle logged actions, on held-out text episodes."""
+    head = f"{R}/runs/episodic_qwen_s{seed}/best.pt"
+    out = f"{R}/runs/episodic_qwen_s{seed}/online_eval.json"
+    command = (
+        _env()
+        + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
+        + f'test -f "{head}" && test -f "{DATA}/dev.jsonl" || '
+        + '{ echo "missing trained head or generated held-out episodes"; exit 3; }\n'
+        + f'"$V/bin/python" harness/eval_episodic_text_online.py '
+        + f'--episodes "{DATA}/dev.jsonl" --head "{head}" '
+        + f'--qwen-model "$MODEL" --model-identity BCE_S44_FINAL '
+        + f'--device cuda --output "{out}" '
+        + f'> "{R}/logs/qz/episodic_online_s{seed}.log" 2>&1\n'
+        + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
+    )
+    return _base(
+        f"episodic-online-s{seed}",
+        "Execute learned set actions in held-out cyclic-rule environment; compare carry vs reset using actual action-dependent observations",
+        command,
+        max_running_time_ms="7200000",
+    )
+
+
 def main():
     seeds = [int(seed) for seed in sys.argv[1:]] or [43, 44, 45]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    payloads = [cache_job()] + [train_job(seed) for seed in seeds]
+    payloads = [cache_job()] + [train_job(seed) for seed in seeds]\n    payloads += [online_eval_job(seed) for seed in seeds]
     for payload in payloads:
         path = OUT_DIR / (payload["name"] + ".json")
         path.write_text(
