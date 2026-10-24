@@ -49,7 +49,7 @@ def set_log_partition(scores: Tensor, correction: Tensor, allowed: Sequence[int]
     support = sorted(set(int(m) for m in allowed))
     if not support or support[0] < 0 or support[-1] > k:
         raise ValueError("invalid permitted cardinalities")
-    if any(not math.isfinite(float(v)) for v in scores.detach()):
+    if not bool(torch.isfinite(scores).all()):
         raise ValueError("nonfinite candidate scores")
     # Restoring m * center is essential: removing it changes the count prior.
     center = scores.detach().max()
