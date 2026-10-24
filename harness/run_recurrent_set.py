@@ -332,6 +332,19 @@ def log_partition_for_eval(scores, corrections, support):
     return set_log_partition(scores, corrections, support)
 
 
+@torch.no_grad()
+def initial_native_map(native, mask, allowed):
+    """Per-question native 0-step MAP sets; uses no gold labels."""
+    if len(allowed) != native.shape[0]:
+        raise ValueError("allowed count / batch mismatch")
+    prior = torch.zeros_like(native)
+    for i, counts in enumerate(allowed):
+        k = int(mask[i].sum().item())
+        initial = set_map(native[i, :k], native.new_zeros(k + 1), counts)
+        prior[i, initial["indices"]] = 1
+    return prior
+
+
 def load_model_checkpoint(path: Path, device: torch.device):
     saved = safe_load(path)
     if saved.get("schema") != CHECKPOINT_SCHEMA:
@@ -348,6 +361,10 @@ def train_command(args) -> None:
         )
     if not math.isfinite(args.lr) or args.lr <= 0 or args.grad_clip <= 0:
         raise ValueError("learning rate and gradient clipping must be positive")
+    if not math.isfinite(args.revision_weight) or args.revision_weight < 0:
+        raise ValueError("revision_weight must be finite and nonnegative")
+    if not math.isfinite(args.unchanged_weight) or not 0 <= args.unchanged_weight <= 1:
+        raise ValueError("unchanged_weight must be finite in [0,1]")
     train_cache, dev_cache = read_caches(args.train_cache, args.dev_cache)
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA unavailable")
@@ -380,6 +397,9 @@ def train_command(args) -> None:
             "steps": args.steps,
             "step_supervision": args.step_supervision,
             "monotonic_weight": args.monotonic_weight,
+            "revision_weight": args.revision_weight,
+            "unchanged_weight": args.unchanged_weight,
+            "revision_source": "frozen initial native set-MAP (no gold labels)",
             "lr": args.lr,
             "epochs": args.epochs,
             "batch_size": args.batch_size,
@@ -398,6 +418,10 @@ def train_command(args) -> None:
             context, native, mask, gold, allowed = take(train_cache, inds, device)
             optimizer.zero_grad(set_to_none=True)
             history = model(context, native, mask, steps=args.steps)
+            previous = (
+                initial_native_map(native, mask, allowed)
+                if args.revision_weight else None
+            )
             loss = loss_over_steps(
                 history,
                 gold,
@@ -405,6 +429,9 @@ def train_command(args) -> None:
                 allowed,
                 step_supervision=args.step_supervision,
                 monotonic_weight=args.monotonic_weight,
+                revision_previous=previous,
+                revision_weight=args.revision_weight,
+                unchanged_weight=args.unchanged_weight,
             )
             if not torch.isfinite(loss):
                 raise FloatingPointError("nonfinite training loss")
@@ -549,6 +576,10 @@ def parser() -> argparse.ArgumentParser:
     train.add_argument("--steps", type=int, default=4)
     train.add_argument("--step-supervision", choices=("all", "last"), default="all")
     train.add_argument("--monotonic-weight", type=float, default=0.0)
+    train.add_argument("--revision-weight", type=float, default=0.0,
+                       help="weight of added/removed-option BCE relative to frozen native set MAP")
+    train.add_argument("--unchanged-weight", type=float, default=0.0,
+                       help="relative auxiliary BCE weight on unchanged options, 0..1")
     train.add_argument("--batch-size", type=int, default=32)
     train.add_argument("--epochs", type=int, default=5)
     train.add_argument("--lr", type=float, default=3e-4)
