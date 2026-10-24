@@ -224,10 +224,20 @@ class RecurrentSetDecision(nn.Module):
         context: Tensor,
         demonstrations: Optional[Tensor],
         demonstration_mask: Optional[Tensor],
+        initial_memory: Optional[Tensor] = None,
     ) -> Tensor:
         b, _ = context.shape
         d = self.config.latent_dim
-        memory = context.new_zeros((b, d))
+        if initial_memory is None:
+            memory = context.new_zeros((b, d))
+        else:
+            if initial_memory.shape != (b, d):
+                raise ValueError("initial_memory must be B x latent_dim")
+            if initial_memory.device != context.device:
+                raise ValueError("initial_memory must be on the context device")
+            if not bool(torch.isfinite(initial_memory).all()):
+                raise ValueError("initial_memory must be finite")
+            memory = initial_memory
         if demonstrations is None:
             if demonstration_mask is not None:
                 raise ValueError("demo mask supplied without demonstrations")
@@ -263,6 +273,7 @@ class RecurrentSetDecision(nn.Module):
         feedback: Optional[str] = None,
         demonstrations: Optional[Tensor] = None,
         demonstration_mask: Optional[Tensor] = None,
+        memory_state: Optional[Tensor] = None,
     ) -> List[dict]:
         if steps < 0 or steps > 64:
             raise ValueError("steps must be 0..64")
@@ -292,7 +303,10 @@ class RecurrentSetDecision(nn.Module):
         context = context.float()
         native = torch.where(mask, native_logits.float(), 0.0)
         question = self.context_proj(context)
-        memory = self.encode_memory(context, demonstrations, demonstration_mask)
+        memory = self.encode_memory(
+            context, demonstrations, demonstration_mask,
+            initial_memory=memory_state,
+        )
         initial = self.init_state(torch.cat((question, memory), dim=-1))
         latent = initial
         scores = native.clone()
