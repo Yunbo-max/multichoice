@@ -62,7 +62,8 @@ class Episode:
         one = rng.randrange(WIDTH)
         demo_in = tuple(int(i == one) for i in range(WIDTH))
         target = rotate(demo_in, direction)
-        first = tuple(int(i in rng.sample(range(WIDTH), 2)) for i in range(WIDTH))
+        sampled = set(rng.sample(range(WIDTH), 2))
+        first = tuple(int(i in sampled) for i in range(WIDTH))
         return Episode(direction, first, embed_demo(demo_in, target))
 
 
