@@ -24,7 +24,7 @@ OUT_DIR = ROOT / "qz_episodic"
 R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish"
 V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
 MODEL = f"{R}/runs/qz/grouped_bce_4gpu_s44/v1/final"
-DATA = f"{R}/runs/episodic_data"
+DATA = f"{R}/runs/episodic_data_causal_v2"
 
 WORKSPACE = "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6"
 PROJECT = "project-160ccb20-98ab-4538-a847-01d1f83d5b0f"
@@ -57,7 +57,7 @@ def _base(name, description, command, max_running_time_ms="7200000", priority=4)
 
 def _env():
     return (
-        "set -uo pipefail\n"
+        "set -euo pipefail\n"
         f"R={R}\nV={V}\nMODEL={MODEL}\n"
         "export HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\n"
         "export PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\n"
@@ -68,12 +68,17 @@ def cache_job():
     command = (
         _env()
         + f'mkdir -p "{DATA}" "{R}/logs/qz"\ncd "{R}"\n'
+        + 'grep -q "oracle_rule_before_decision" harness/gen_text_episodes.py || '
+        + '{ echo "STALE CODE: causal generator fix missing; abort"; exit 9; }\n'
         + f'"$V/bin/python" harness/gen_text_episodes.py '
         + f'--output "{DATA}/train.jsonl" --episodes 1024 --horizon 6 '
         + f"--rule-switch-prob 0.25 --seed 43\n"
         + f'"$V/bin/python" harness/gen_text_episodes.py '
         + f'--output "{DATA}/dev.jsonl" --episodes 256 --horizon 6 '
         + f"--rule-switch-prob 0.25 --seed 3043\n"
+        + f'"$V/bin/python" harness/gen_text_episodes.py '
+        + f'--output "{DATA}/test.jsonl" --episodes 256 --horizon 8 '
+        + f"--rule-switch-prob 0.25 --seed 9043\n"
         + f'"$V/bin/python" harness/build_episodic_features.py '
         + f'--input "{DATA}/train.jsonl" --model "$MODEL" '
         + f'--model-identity BCE_S44_FINAL --output "{DATA}/train.pt" --device cuda '
@@ -95,7 +100,7 @@ def cache_job():
 
 
 def train_job(seed):
-    out = f"{R}/runs/episodic_qwen_s{seed}"
+    out = f"{R}/runs/episodic_qwen_causal_v2_s{seed}"
     command = (
         _env()
         + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
@@ -116,10 +121,35 @@ def train_job(seed):
     )
 
 
+
+def online_eval_job(seed):
+    """Execute model predictions, not oracle logged actions, on untouched held-out test episodes."""
+    head = f"{R}/runs/episodic_qwen_causal_v2_s{seed}/best.pt"
+    out = f"{R}/runs/episodic_qwen_causal_v2_s{seed}/online_eval.json"
+    command = (
+        _env()
+        + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
+        + f'test -f "{head}" && test -f "{DATA}/test.jsonl" || '
+        + '{ echo "missing trained head or generated held-out episodes"; exit 3; }\n'
+        + f'"$V/bin/python" harness/eval_episodic_text_online.py '
+        + f'--episodes "{DATA}/test.jsonl" --head "{head}" '
+        + f'--qwen-model "$MODEL" --model-identity BCE_S44_FINAL '
+        + f'--device cuda --output "{out}" '
+        + f'> "{R}/logs/qz/episodic_online_s{seed}.log" 2>&1\n'
+        + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
+    )
+    return _base(
+        f"episodic-online-s{seed}",
+        "Execute learned set actions in held-out cyclic-rule environment; compare carry vs reset using actual action-dependent observations",
+        command,
+        max_running_time_ms="7200000",
+    )
+
+
 def main():
     seeds = [int(seed) for seed in sys.argv[1:]] or [43, 44, 45]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    payloads = [cache_job()] + [train_job(seed) for seed in seeds]
+    payloads = [cache_job()] + [train_job(seed) for seed in seeds]\n    payloads += [online_eval_job(seed) for seed in seeds]
     for payload in payloads:
         path = OUT_DIR / (payload["name"] + ".json")
         path.write_text(

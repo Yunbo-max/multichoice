@@ -72,15 +72,23 @@ def gen_episode(rng, horizon, rule_switch_prob):
         active[i] = 1
     steps = []
     for t in range(horizon):
-        extra = ""
-        if t > 0 and rng.random() < rule_switch_prob:
+        # Rule in force was known at the start of this decision. No future
+        # transition may alter gold before the agent has observed feedback.
+        rule_at_decision = direction
+        gold = rotate(active, rule_at_decision)
+        executed = gold  # oracle trajectory for supervised OFFLINE training
+        feedback = (
+            f"After this decision the active components are {active_text(executed)}."
+        )
+        # Change the hidden rule only AFTER executing the current action.
+        # Its new demonstration is observed now and applies from t+1 onward.
+        if t < horizon - 1 and rng.random() < rule_switch_prob:
             direction = -direction
-            extra = " The rule changed. " + demo_text(direction)
-        gold = rotate(active, direction)
-        executed = gold  # oracle trajectory for supervised training
+            feedback += " The rule changed. " + demo_text(direction)
         steps.append(
             {
                 "step_index": t,
+                "oracle_rule_before_decision": rule_at_decision,
                 "decision": {
                     "state": state_text(active),
                     "question": "Which components should be active now?",
@@ -91,10 +99,7 @@ def gen_episode(rng, horizon, rule_switch_prob):
                 "action_ids": option_ids(),
                 "gold": gold,
                 "executed_set": executed,
-                "post_observation": (
-                    f"After this decision the active components are {active_text(gold)}."
-                    + extra
-                ),
+                "post_observation": feedback,
                 "done": t == horizon - 1,
             }
         )
@@ -117,6 +122,8 @@ def validate_episode(episode):
         raise ValueError("steps must be a nonempty chronological list")
     k = len(CELLS)
     for t, step in enumerate(sequence):
+        if step.get("oracle_rule_before_decision") not in (-1, 1):
+            raise ValueError("missing private pre-decision rule audit field")
         if step.get("step_index") != t:
             raise ValueError("step_index must equal chronological position")
         ids = step.get("action_ids")
@@ -151,9 +158,14 @@ def main():
         parser.error("rule-switch-prob must be in [0,1]")
     rng = random.Random(args.seed)
     count = 0
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    if args.output.exists():
+        raise FileExistsError(f"output already exists: {args.output}")
     with args.output.open("w", encoding="utf-8") as stream:
-        for _ in range(args.episodes):
+        for episode_index in range(args.episodes):
             episode = gen_episode(rng, args.horizon, args.rule_switch_prob)
+            # Deterministic distinct IDs across train/dev generation seeds.
+            episode["episode_id"] = f"ep-{args.seed}-{episode_index:08d}"
             validate_episode(episode)
             stream.write(json.dumps(episode, ensure_ascii=False) + "\n")
             count += 1

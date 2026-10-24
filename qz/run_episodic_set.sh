@@ -9,6 +9,8 @@ case "$STAGE" in
     "$PY" -m unittest discover -s tests -p 'test_episodic_set_decision.py' -v
     "$PY" -m unittest discover -s tests -p 'test_episodic_features.py' -v
     "$PY" -m unittest discover -s tests -p 'test_episodic_builder.py' -v
+    "$PY" -m unittest discover -s tests -p 'test_episodic_generator_cache.py' -v
+    "$PY" -m unittest discover -s tests -p 'test_episodic_online.py' -v
     ;;
   toy)
     SEED="${SEED:-43}"
