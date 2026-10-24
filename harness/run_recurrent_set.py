@@ -296,13 +296,13 @@ def evaluate_model(
             pred = torch.zeros(k, device=device, dtype=torch.bool)
             pred[decoded["indices"]] = True
             ref = gold[j, :k].bool()
-            start = set_map(
+            initial_decoded = set_map(
                 initial["scores"][j, :k],
                 initial["correction"][j, : k + 1],
                 support,
             )
             before = torch.zeros(k, device=device, dtype=torch.bool)
-            before[start["indices"]] = True
+            before[initial_decoded["indices"]] = True
             was_right = torch.equal(before, ref)
             now_right = torch.equal(pred, ref)
             initial_right += int(was_right)
