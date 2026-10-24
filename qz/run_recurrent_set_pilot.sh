@@ -31,7 +31,7 @@ case "$STAGE" in
     ;;
   train)
     for seed in 43 44 45; do
-      for mode in set latent_only static; do
+      for mode in set latent_only static mlp; do
         "$PYTHON_BIN" harness/run_recurrent_set.py train \
           --train-cache "$CACHE/train5k.pt" --dev-cache "$CACHE/dev2042.pt" \
           --output "$OUT/${mode}_s${seed}" --feedback "$mode" \
@@ -39,8 +39,19 @@ case "$STAGE" in
       done
     done
     ;;
+  revision)
+    # Controlled Experiment D: same frozen features / budgets as "train".
+    # Prior set = initial native set-MAP, NOT gold. Revision BCE auxiliary.
+    for seed in 43 44 45; do
+      "$PYTHON_BIN" harness/run_recurrent_set.py train \
+        --train-cache "$CACHE/train5k.pt" --dev-cache "$CACHE/dev2042.pt" \
+        --output "$OUT/set_revision_s${seed}" --feedback set \
+        --revision-weight 1.0 --unchanged-weight 0.0 \
+        --steps 4 --epochs 5 --latent-dim 128 --seed "$seed" --device cuda
+    done
+    ;;
   *)
-    echo "usage: bash qz/run_recurrent_set_pilot.sh {smoke|cache|train}" >&2
+    echo "usage: bash qz/run_recurrent_set_pilot.sh {smoke|cache|train|revision}" >&2
     exit 2
     ;;
 esac
