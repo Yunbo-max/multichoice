@@ -11,6 +11,7 @@ Importing this module does not load transformers or model weights.
 from __future__ import annotations
 
 from pathlib import Path
+from collections import OrderedDict
 
 import torch
 
@@ -65,11 +66,16 @@ class FrozenQwenDecisionEncoder:
             0, torch.tensor(ids, device=self.device, dtype=torch.long)
         ).float()
         self.hidden_size = int(self.label_weight.shape[1])
+        # Frozen/eval encoder: exact-prompt cache avoids tens of thousands of
+        # redundant forwards on a small synthetic state/action vocabulary.
+        # Store cached vectors on CPU to avoid accumulating GPU memory.
+        self._slot_cache = OrderedDict()
+        self._slot_cache_max = 8192
+        self._slot_batch_size = 4
 
     @torch.no_grad()
-    def _slot_vectors(self, prompts: list[str]) -> torch.Tensor:
-        if not prompts:
-            raise ValueError("no prompts")
+    def _uncached_slot_vectors(self, prompts: list[str]) -> torch.Tensor:
+        """Run a batch of previously unseen exact prompt strings."""
         encoded = self.tokenizer(
             prompts, padding=True, add_special_tokens=False, return_tensors="pt",
         )
@@ -86,6 +92,35 @@ class FrozenQwenDecisionEncoder:
         return result.last_hidden_state[
             torch.arange(len(prompts), device=self.device), index
         ].float()
+
+    @torch.no_grad()
+    def _slot_vectors(self, prompts: list[str]) -> torch.Tensor:
+        """Deduplicated frozen Qwen readout; batched and cached by exact prompt.
+
+        The cache changes computation cost only, never prompt contents or labels.
+        This is safe only because the Qwen backbone is frozen in eval mode.
+        """
+        if not prompts:
+            raise ValueError("no prompts")
+        unique = list(dict.fromkeys(prompts))
+        values = {}
+        unseen = []
+        for prompt in unique:
+            if prompt in self._slot_cache:
+                values[prompt] = self._slot_cache[prompt]
+                self._slot_cache.move_to_end(prompt)
+            else:
+                unseen.append(prompt)
+        for offset in range(0, len(unseen), self._slot_batch_size):
+            chunk = unseen[offset:offset + self._slot_batch_size]
+            new_vectors = self._uncached_slot_vectors(chunk).detach().cpu()
+            for prompt, vector in zip(chunk, new_vectors):
+                values[prompt] = vector
+                self._slot_cache[prompt] = vector
+                self._slot_cache.move_to_end(prompt)
+                if len(self._slot_cache) > self._slot_cache_max:
+                    self._slot_cache.popitem(last=False)
+        return torch.stack([values[prompt] for prompt in prompts], dim=0).to(self.device)
 
     def _text_prompt(self, text: str) -> str:
         return self.tokenizer.apply_chat_template(
