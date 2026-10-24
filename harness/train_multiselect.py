@@ -1422,6 +1422,8 @@ def main():
         parser.error(
             "set objective does not mix in the legacy label-token graph penalty"
         )
+    if args.objective != "set" and args.count_anchor:
+        parser.error("--count-anchor requires --objective set")
     if args.objective == "bce" and args.count_target != "teacher":
         parser.error(
             "--count-target gold is a set-head ablation and requires --objective set"
@@ -1562,6 +1564,18 @@ def main():
         raise ValueError(
             "set checkpoint requires --objective set; refusing to discard its count head"
         )
+    if args.resume and args.objective == "set":
+        meta_path = load_path / "decision_readout.json"
+        if not meta_path.is_file():
+            raise ValueError(f"resume set checkpoint lacks metadata: {meta_path}")
+        previous_loss = json.loads(meta_path.read_text(encoding="utf-8")).get(
+            "training_loss"
+        ) or {}
+        if bool(previous_loss.get("count_anchor", False)) != args.count_anchor:
+            raise ValueError(
+                "resume checkpoint count-anchor mode disagrees with --count-anchor; "
+                "use matching mode or start a new (non-resume) experiment"
+            )
 
     output = Path(args.output)
     if rank == 0:
@@ -1601,6 +1615,7 @@ def main():
                 "count_target": args.count_target,
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
+                "count_anchor": args.count_anchor,
                 "gold_weight": args.gold_weight,
                 "allow_legacy_targets": args.allow_legacy_targets,
                 "lambda_g": args.lambda_g,
@@ -1808,6 +1823,7 @@ def main():
                         scores.cpu().tolist(),
                         count_logits[position, : k + 1].cpu().tolist(),
                         row,
+                        count_anchor=args.count_anchor,
                     )
                     item["candidate_logits"] = scores.cpu().tolist()
                     # Shared metrics compute marginal BCE identically to standalone eval.
@@ -2124,6 +2140,7 @@ def main():
                 "count_target": args.count_target,
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
+                "count_anchor": args.count_anchor,
                 "gold_weight": args.gold_weight,
             },
         )

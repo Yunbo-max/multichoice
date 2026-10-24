@@ -24,10 +24,12 @@ GPU audit (both readouts on one checkpoint)::
 
   python -I harness/readout_audit.py --input data/multiselect/dev.jsonl \
       --model runs/qz/grouped_bce_4gpu_s44/final --output runs/readout_audit \
-      --limit 300 --limit-mode head
+      --limit 300 --limit-mode stratified --sample-seed 43
 
-``--limit N`` restricts the audit to the first N (or a stride of N) questions;
-use a pre-split stratified sample for the full Gate 1 diagnostic.
+``--limit N --limit-mode stratified`` selects N questions across source,
+gold count and candidate count, using a fixed seed and storing selected-ID
+provenance. Gold is used only to construct the offline *audit* cohort, never
+as an inference-time feature.
 """
 
 from __future__ import annotations
@@ -35,7 +37,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,14 +128,46 @@ def audit_report(rows, native_predictions, yesno_predictions, threshold=0.5):
     }
 
 
-def _subset(rows, limit, limit_mode):
-    if limit_mode not in ("head", "stride"):
-        raise ValueError("limit_mode must be head or stride")
-    if limit <= 0:
-        return rows
+def _subset(rows, limit, limit_mode, seed=43):
+    """Return exactly N rows where feasible; stratified sampling is auditable.
+
+    The offline diagnostic can stratify by gold count. Gold never reaches the
+    model or prediction rule; it determines only which dev questions are audited.
+    """
+    if limit_mode not in ("head", "stride", "stratified"):
+        raise ValueError("limit_mode must be head, stride or stratified")
+    if limit <= 0 or limit >= len(rows):
+        return list(rows)
     if limit_mode == "head":
         return rows[:limit]
-    return rows[::limit]
+    if limit_mode == "stride":
+        return [rows[(i * len(rows)) // limit] for i in range(limit)]
+
+    grouped = defaultdict(list)
+    for i, row in enumerate(rows):
+        key = (row["source"], min(sum(row["target"]), 5),
+               min(len(row["options"]), 8))
+        grouped[key].append(i)
+    if limit < len(grouped):
+        raise ValueError(
+            f"stratified sample {limit} smaller than {len(grouped)} nonempty strata"
+        )
+    rng = random.Random(seed)
+    for key in sorted(grouped):
+        rng.shuffle(grouped[key])
+    quotas = {key: 1 for key in grouped}
+    target = {key: limit * len(indices) / len(rows)
+              for key, indices in grouped.items()}
+    for _ in range(limit - len(grouped)):
+        possible = [key for key in grouped if quotas[key] < len(grouped[key])]
+        key = max(possible, key=lambda k: (
+            target[k] - quotas[k], len(grouped[k]) - quotas[k], k
+        ))
+        quotas[key] += 1
+    selected = {i for key in grouped for i in grouped[key][:quotas[key]]}
+    if len(selected) != limit:
+        raise AssertionError("stratified selection must contain exactly N rows")
+    return [row for i, row in enumerate(rows) if i in selected]
 
 
 def _forward_logits(model, tokenizer, prompts, output_ids, device, max_input_tokens):
@@ -348,7 +384,10 @@ def main(argv=None):
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--max-input-tokens", type=int, default=8192)
     parser.add_argument("--limit", type=int, default=0, help="0 = all rows")
-    parser.add_argument("--limit-mode", choices=("head", "stride"), default="head")
+    parser.add_argument(
+        "--limit-mode", choices=("head", "stride", "stratified"), default="head"
+    )
+    parser.add_argument("--sample-seed", type=int, default=43)
     args = parser.parse_args(argv)
     try:
         metrics = _local_module("multiselect_metrics")
@@ -368,9 +407,19 @@ def main(argv=None):
         rows = metrics.read_dataset(
             args.input, None if args.expected_split == "any" else args.expected_split
         )
-        rows = _subset(rows, args.limit, args.limit_mode)
+        full_rows = len(rows)
+        rows = _subset(rows, args.limit, args.limit_mode, seed=args.sample_seed)
         if not rows:
             raise ValueError("no rows to audit after applying --limit")
+        stratification = {}
+        for row in rows:
+            name = (f"{row['source']}|gold{min(sum(row['target']), 5)}"
+                    f"|k{min(len(row['options']), 8)}")
+            stratification[name] = stratification.get(name, 0) + 1
+        selected_hash = hashlib.sha256(
+            json.dumps(sorted(row["id"] for row in rows),
+                       ensure_ascii=False, separators=(",", ":")).encode()
+        ).hexdigest()
         config = {
             "input": str(args.input),
             "expected_split": args.expected_split,
@@ -379,7 +428,11 @@ def main(argv=None):
             "threshold": args.threshold,
             "limit": args.limit,
             "limit_mode": args.limit_mode,
+            "sample_seed": args.sample_seed,
+            "n_rows_before_limit": full_rows,
             "n_rows_after_limit": len(rows),
+            "selected_ids_sha256": selected_hash,
+            "audit_strata": dict(sorted(stratification.items())),
         }
         if args.validate_only:
             config.update(

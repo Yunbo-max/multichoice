@@ -1,6 +1,10 @@
 # SetJev v2 plan: from "harder set loss" to "useful, calibrated teacher supervision"
 
-Date: 2026-10-24. Status: plan only, nothing below is implemented or validated yet.
+Date: 2026-10-24. Status: Gate 1 native-vs-Yes/No audit and Gate 3 raw-logit
+count anchor are implemented with regression tests and staged QZ payloads.
+No Gate 1/3 GPU evidence has been produced by this patch. The reasoning
+comparisons, explicit teacher count targets, hard->soft and recursive experiments
+remain proposals, not completed implementations.
 
 ## 1. What the latest results showed (negative signal)
 
@@ -73,8 +77,9 @@ Soft Teacher Set CE has a 45.93-point gap between actual and oracle-count EM.
 
 Moreover, in the full 2,042-question dev set, 31.34% of questions have exactly 3
 correct answers, and the 5k Gold Set CE count-head mode accuracy is also exactly
-31.34%. The count head is not learning per-question counts; it is predicting the
-mode. It has not moved beyond a constant predictor after only 79 steps.
+31.34%. The matching mode accuracy suggests a nearly constant count prediction.
+Inspect the per-question count distributions before claiming the head is
+exactly constant; the 79-step run does not establish effective count learning.
 
 So the next version should **not** stack more complex set losses. It should first
 fix (1) teacher target semantics/calibration, (2) student count-head cold-start,
@@ -132,17 +137,33 @@ same joint distribution so the targets stay consistent.
 
 ### Modification 2: cold-start the student count head from BCE
 
-Instead of randomly learning the whole count distribution, use a residual count
-correction:
+Instead of starting with the old **zero-initialized, uniform** count head,
+use a residual count correction:
 
 $$
-\rho_\theta(m \mid x) = \operatorname{softmax}_m \left[ \log Z_m(s) + a_\phi(m, x) \right]
+\rho_\theta(m \mid x) =
+\operatorname{softmax}_{m \in \mathcal M_x}
+\left[\log Z_m(s) + a_\phi(m,x)\right].
 $$
 
-with a lightweight learnable correction $a_\phi$ initialized to zero. The new model
-starts from the count implied by its own candidate scores and only then learns the
-extra count signal from the teacher, avoiding a randomly-initialized count head
-dominating output over short training.
+Here $a_\phi$ is zero-initialized. Crucially, this uses the **raw** candidate
+logits, not max-centered scores without restoring the shift:
+
+$$
+\log Z_m(s) =
+\log Z_m(s - c\mathbf1) + mc,\quad c=\max_i s_i.
+$$
+
+At zero correction, the model starts from the candidate scores' implicit
+Poisson-binomial count distribution *conditioned on the publicly allowed
+cardinalities*. If empty sets are allowed it matches the ordinary BCE law;
+for nonempty multi-select it is nonempty-conditioned BCE, and for single-select
+it is categorical softmax CE.
+
+**Experimental interpretation:** current Gate 3 payloads start from the base
+Qwen model, so they compare anchoring strategies but are *not* a demonstrated
+BCE-checkpoint warm start. The full hard->soft continuation experiment still
+needs a separately matched training design.
 
 ### Modification 3: strict hard-then-soft training
 
@@ -219,3 +240,45 @@ already point at the problem: candidate ranking still works, but teacher
 probabilities are over-confident, the student over-selects, and the count readout is
 under-trained. Solve that before asking why stronger direct decision-making might
 not imply stronger next-generation teaching.
+
+
+## 7. Implemented gates and submission safety (code update)
+
+- `harness/readout_audit.py`: measures **two no-reasoning readouts** of a single
+  frozen Gold-BCE checkpoint (native letter logits vs candidate-conditioned
+  Yes/No logits). Reasoning-conditioned readout remains a separate pending arm.
+  A deterministic `--limit-mode stratified --limit 300 --sample-seed 43` selects
+  across source, gold cardinality and option count. The audit records a digest
+  of selected IDs and cohort strata. Gold cardinality determines only which
+  held-out questions are included; the teacher never receives it at inference.
+- `--count-anchor`: training loss, **in-training dev checkpoint selection**, and
+  exported-checkpoint evaluation now use the same raw-logit count law. The
+  anchor flag is written into training metadata; an incompatible resumed
+  structured checkpoint fails rather than silently switching count laws.
+- `qz/make_setjev_v2_payloads.py`: regenerates one Gate 1 and four Gate 3
+  gold-target ablation payloads. Gate 3 compares anchored vs unanchored heads
+  with the same objectives, data and seed. It does not yet implement the
+  hard-then-soft self-distillation stage.
+- `qz/submit_setjev_v2.sh`: requires an explicit gate and never submits both
+  stages together. A **live** Gate 3 submission requires
+  `GATE1_REVIEWED=1` plus a local, readable `GATE1_AUDIT_JSON` containing
+  a completed stratified Gate 1 checkpoint audit (not just a validate-only
+  placeholder). This is explicit human review, not an automatic criterion that
+  a teacher has become trustworthy.
+
+Suggested invocation on the QZ client:
+
+```bash
+python3 qz/make_setjev_v2_payloads.py
+bash qz/submit_setjev_v2.sh validate all
+bash qz/submit_setjev_v2.sh --dry-run gate1
+CONFIRM_SUBMIT=1 bash qz/submit_setjev_v2.sh --submit gate1
+
+# After the real GPU job completes, inspect/copy its audit.json locally.
+GATE1_REVIEWED=1 GATE1_AUDIT_JSON=/path/to/audit.json CONFIRM_SUBMIT=1 \
+  bash qz/submit_setjev_v2.sh --submit gate3
+```
+
+No job was submitted by this code correction. Running the Python unit suite on
+the actual project runtime (including PyTorch) and a native model forward remain
+required before interpreting new GPU results.

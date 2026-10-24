@@ -10,7 +10,27 @@ The repository also contains a **multi-view self-teacher** pipeline and an
 experimental `--objective set` model. Its teacher targets contain both candidate
 membership and answer-count distributions. A small count head and exact dynamic
 programming keep training and one-pass inference probabilistically consistent.
-This new method has **no trained-model result yet**.
+GPU pilots now exist, but **neither joint set CE nor raw soft-teacher
+distillation has beaten the matched gold BCE baseline**. See
+[three-seed and 5k results](docs/seed_results_2026-10-23.md).
+The recursive teacher-utility hypothesis remains untested.
+
+## SetJev v2 bug fixes and staged diagnostics (2026-10-24)
+
+See [the latest Gate 1/3 implementation and runnable instructions](docs/setjev_v2_plan.md).
+
+- `--count-anchor` now retains the **raw candidate logit scale**:
+  `log Z_m(s) = log Z_m(s-max(s)) + m*max(s)`. The former centered-only
+  implementation incorrectly made cardinality invariant to a common score shift.
+- Structured dev checkpoint selection now uses the same `count_anchor` flag
+  as the training loss and exported inference. Incompatible anchor modes are
+  rejected for `--resume`; the flag is recorded in run metadata.
+- `readout_audit.py` compares native candidate logits with no-reasoning Yes/No
+  logits using a fixed checkpoint and a deterministic stratified dev cohort.
+  It does **not yet** include reasoning-conditioned teacher extraction.
+- `qz/submit_setjev_v2.sh` separates GPU submission into Gate 1 and Gate 3.
+  Live Gate 3 requires an inspected real Gate 1 report and explicit sign-off.
+  No Gate 1/3 GPU result is included by these fixes alone.
 
 ## New implementation: membership and cardinality distillation
 
@@ -48,8 +68,9 @@ and the [editable pilot configuration](experiments/decision_teacher_rounds.examp
 
 Direct accuracy, reasoning-teacher quality, and downstream teaching utility are
 different measurements. **The degradation hypothesis has not been demonstrated.**
-The main set-loss comparison also remains untrained; these additions make the
-scientific comparisons executable and auditable, not empirically successful.
+The 3-seed gold-set comparison and a single-seed soft-teacher 5k pilot have
+been run; both show negative or mixed signals as reported below. The recursive
+teacher experiment has not been run.
 
 The default trainer remains BCE. New data/output directories are required; the
 archival datasets, pilot outputs and reported run below have not been rewritten.

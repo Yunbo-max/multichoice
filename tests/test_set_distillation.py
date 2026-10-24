@@ -251,8 +251,10 @@ class SetMathTests(unittest.TestCase):
         for k in range(2, 6):
             scores = [rng.uniform(-3, 3) for _ in range(k)]
             anchored = count_anchor_logits(scores, [0.0] * (k + 1))
-            centered = [s - max(scores) for s in scores]
-            for actual, expected in zip(anchored, log_partitions(centered)):
+            center = max(scores)
+            raw_logz = [z + m * center for m, z in
+                        enumerate(log_partitions([s - center for s in scores]))]
+            for actual, expected in zip(anchored, raw_logz):
                 self.assertAlmostEqual(actual, expected, places=12)
 
     def test_structured_prediction_anchor_recovers_score_implied_count(self):
@@ -260,8 +262,7 @@ class SetMathTests(unittest.TestCase):
         question = row(4)
         scores = [rng.uniform(-2, 2) for _ in range(4)]
         item = structured_prediction(scores, [0.0] * 5, question, count_anchor=True)
-        centered = [s - max(scores) for s in scores]
-        logz = log_partitions(centered)
+        logz = log_partitions(scores)
         support = allowed_counts(question)
         total = sum(math.exp(logz[m]) for m in support)
         expected = [
@@ -270,15 +271,47 @@ class SetMathTests(unittest.TestCase):
         for actual, target in zip(item["count_probs"], expected):
             self.assertAlmostEqual(actual, target, places=12)
 
-    def test_count_anchor_is_shift_invariant(self):
-        # max-centering makes the anchor invariant to a constant candidate-score shift.
+    def test_count_anchor_restores_shift_for_each_cardinality(self):
+        # Adding c to each option raises log Z_m by exactly m*c.
         rng = random.Random(19)
         scores = [rng.uniform(-2, 2) for _ in range(4)]
         shift = 3.7
         anchored = count_anchor_logits(scores, [0.0] * 5)
         shifted = count_anchor_logits([s + shift for s in scores], [0.0] * 5)
-        for a, b in zip(anchored, shifted):
-            self.assertAlmostEqual(a, b, places=12)
+        for m, (a, b) in enumerate(zip(anchored, shifted)):
+            self.assertAlmostEqual(b - a, m * shift, places=11)
+
+    def test_high_positive_scores_favor_all_options_not_uniform_counts(self):
+        # Uncentered logits are essential: with scores=(4,4), both should be
+        # selected with probability e^8/(2e^4+e^8), not 1/3.
+        question = row(2)
+        scores = [4.0, 4.0]
+        prediction = structured_prediction(
+            scores, [0.0, 0.0, 0.0], question, count_anchor=True
+        )
+        expected = math.exp(8) / (math.exp(8) + 2 * math.exp(4))
+        self.assertAlmostEqual(prediction["count_probs"][2], expected, places=12)
+        self.assertGreater(prediction["count_probs"][2], 0.96)
+
+    def test_anchor_zero_residual_is_conditional_bernoulli_nll(self):
+        for k, mode, allow_empty in ((3, "multi", True), (3, "multi", False),
+                                     (3, "single", False)):
+            question = row(k, mode, allow_empty)
+            scores = [-0.9, 1.1, 0.3]
+            target = [0.0, 1.0, 0.0]
+            rho = [0.0] * (k + 1)
+            rho[1] = 1.0
+            support = allowed_counts(question)
+            logits = count_anchor_logits(scores, [0.0] * (k + 1))
+            actual = scalar_set_cross_entropy(
+                scores, logits, target, rho, support, normalize=False
+            )
+            z = log_partitions(scores)
+            expected = math.log(sum(math.exp(z[m]) for m in support)) - scores[1]
+            self.assertAlmostEqual(actual, expected, places=12)
+            if allow_empty:
+                bce = sum(math.log1p(math.exp(s)) for s in scores) - scores[1]
+                self.assertAlmostEqual(actual, bce, places=12)
 
 
 @unittest.skipUnless(importlib.util.find_spec("torch"), "PyTorch is not installed")
@@ -371,6 +404,28 @@ class TorchSetTests(unittest.TestCase):
             expected = count_anchor_logits(scores.tolist(), [0.0] * (k + 1))
             for a, e in zip(actual, expected):
                 self.assertAlmostEqual(a, e, places=4)
+
+    def test_count_anchor_shift_gradient_tracks_candidate_scores(self):
+        import torch
+        from set_distillation import set_loss_terms
+
+        question = row(2, "multi", False)
+        attach_set_targets([question])
+        scores = torch.tensor([[4.0, 4.0]], requires_grad=True)
+        counts = torch.zeros((1, 3), requires_grad=True)
+        loss = set_loss_terms(scores, counts, [question], count_anchor=True)[0].sum()
+        loss.backward()
+        # With both scores high, zero residual should place most mass on {A,B}.
+        # Changing their common offset changes cardinality, hence the loss.
+        eps = 1e-3
+        with torch.no_grad():
+            shifted_scores = scores.detach() + eps
+            shifted_loss = set_loss_terms(
+                shifted_scores, counts.detach(), [question], count_anchor=True
+            )[0].sum()
+        directional = float(scores.grad.sum()) * eps
+        self.assertAlmostEqual(float(shifted_loss - loss), directional, delta=1e-5)
+        self.assertTrue(torch.isfinite(counts.grad).all())
 
     def test_count_anchor_loss_has_finite_gradient_at_zero_head(self):
         import torch

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "harness"))
-from readout_audit import audit_report
+from readout_audit import _subset, audit_report
 
 
 def question(ident, target):
@@ -79,6 +79,43 @@ class ReadoutAuditTests(unittest.TestCase):
         self.assertLess(comparison["question_em"]["delta_yesno_minus_native"], 0.0)
         self.assertLess(comparison["precision"]["delta_yesno_minus_native"], 0.0)
         self.assertGreaterEqual(comparison["recall"]["delta_yesno_minus_native"], 0.0)
+
+
+    def test_stride_means_n_evenly_spaced_rows_not_every_nth_row(self):
+        rows = [question(f"q{i}", [1, 0, 1, 0, 0]) for i in range(100)]
+        sample = _subset(rows, 13, "stride")
+        self.assertEqual(len(sample), 13)
+        self.assertEqual(len({row["id"] for row in sample}), 13)
+        self.assertEqual(sample[0]["id"], "q0")
+        self.assertEqual(sample[-1]["id"], "q92")
+
+    def test_stratified_sampler_covers_sources_and_gold_counts(self):
+        rows = []
+        for source in ("cmb_exam_multi", "multirc"):
+            for gold_count in (1, 2, 3, 4):
+                for i in range(18):
+                    row = question(f"{source}-{gold_count}-{i}",
+                                   [1] * gold_count + [0] * (5 - gold_count))
+                    row["source"] = source
+                    rows.append(row)
+        sample = _subset(rows, 30, "stratified", seed=43)
+        same = _subset(rows, 30, "stratified", seed=43)
+        self.assertEqual([row["id"] for row in sample],
+                         [row["id"] for row in same])
+        self.assertEqual(len(sample), 30)
+        self.assertEqual(len({row["id"] for row in sample}), 30)
+        seen = {(r["source"], sum(r["target"])) for r in sample}
+        self.assertEqual(len(seen), 8)
+        self.assertTrue(all((source, c) in seen
+                            for source in ("cmb_exam_multi", "multirc")
+                            for c in (1, 2, 3, 4)))
+
+    def test_stratified_sample_requires_one_row_per_nonempty_stratum(self):
+        rows = [question("a", [1, 0, 0]),
+                question("b", [1, 1, 0]),
+                question("c", [1, 1, 1])]
+        with self.assertRaisesRegex(ValueError, "smaller than"):
+            _subset(rows, 2, "stratified")
 
     def test_key_metrics_present_in_comparison(self):
         report = audit_report(

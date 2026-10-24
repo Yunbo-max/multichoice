@@ -377,15 +377,13 @@ def torch_log_partitions(scores, return_table=False):
 
 
 def count_anchor_logits(scores, count_logits):
-    """Residual count-head anchor: ``count_logits + log Z_m(scores)`` (center=max).
+    """Residual count logits: correction[m] + log Z_m(raw candidate scores).
 
-    Modification 2 of ``docs/setjev_v2_plan.md``. ``log Z_m(s)`` is the candidate-
-    score-implied count normalizer, so a zero correction recovers the count
-    distribution implied by the candidate scores (cold start from BCE) instead of
-    a randomly-initialized count head. ``center=max`` matches
-    ``structured_prediction``/``structured_marginals``; the learned correction
-    absorbs any constant shift, and the convention must be identical in training
-    and inference.
+    Calculate log Z on max-centered logits for stability and restore m*max(score).
+    A shared shift changes the implied count distribution; discarding that shift
+    incorrectly makes the count law invariant. Zero correction gives independent
+    sigmoid cardinality conditioned on the *publicly allowed* counts; it is
+    ordinary BCE cardinality only when empty answers are allowed.
     """
     if not scores or any(not math.isfinite(s) for s in scores):
         raise ValueError("scores must be nonempty and finite")
@@ -393,16 +391,18 @@ def count_anchor_logits(scores, count_logits):
         raise ValueError("count_logits needs K+1 entries")
     center = max(scores)
     logz = log_partitions([s - center for s in scores])
-    return [count_logits[m] + logz[m] for m in range(len(count_logits))]
+    return [count_logits[m] + logz[m] + m * center for m in range(len(count_logits))]
 
 
 def torch_count_anchor_logits(scores, count_logits):
     """Autograd-safe residual count-head anchor (see ``count_anchor_logits``)."""
     import torch
 
-    centered = scores - scores.max()
+    center = scores.max()
+    centered = scores - center
     logz = torch_log_partitions(centered)
-    return count_logits + logz
+    m = torch.arange(scores.numel() + 1, device=scores.device, dtype=scores.dtype)
+    return count_logits + logz + m * center
 
 
 def torch_structured_log_marginals(scores, log_count, allowed):

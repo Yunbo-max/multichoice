@@ -79,13 +79,13 @@ def gate1_readout_audit():
         + f'cd "{R}"\n'
         + f'"$V/bin/python" -I "{R}/harness/readout_audit.py" '
         + f'--input "{D_FULL}/dev.jsonl" --model "{CKPT}" --output "{out}" '
-        + "--limit 300 --limit-mode head --device cuda --batch-size 8 "
+        + "--limit 300 --limit-mode stratified --sample-seed 43 --device cuda --batch-size 8 "
         + f'--max-input-tokens 8192 > "{R}/logs/qz/readout_audit_gate1_s44.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
     return _base(
         "readout-audit-gate1-bce-s44",
-        "Gate 1 readout audit: native option logits vs candidate Yes/No on grouped_bce_4gpu_s44/final, dev head 300",
+        "Gate 1 readout audit: native option logits vs candidate Yes/No on grouped_bce_4gpu_s44/final, stratified dev 300",
         command,
         max_running_time_ms="3600000",
     )
@@ -133,7 +133,7 @@ def main():
         ),
         _train(
             "gate3-set_ce-anchor-5k-s43",
-            "Gate 3: gold set_ce + residual count anchor, 5k, seed 43, 4xH100",
+            "Gate 3: gold set_ce + raw-logit count anchor (base start, not BCE warm start), 5k, seed 43, 4xH100",
             "set_ce",
             True,
         ),
@@ -145,7 +145,7 @@ def main():
         ),
         _train(
             "gate3-induced-anchor-5k-s43",
-            "Gate 3: gold induced_marginal + residual count anchor, 5k, seed 43, 4xH100",
+            "Gate 3: gold induced_marginal + raw-logit count anchor (base start, not BCE warm start), 5k, seed 43, 4xH100",
             "induced_marginal",
             True,
         ),
