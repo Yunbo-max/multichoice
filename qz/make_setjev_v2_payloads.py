@@ -130,33 +130,27 @@ def _train(
 
 
 def main():
-    payloads = [
-        gate1_readout_audit(),
-        _train(
-            "gate3-set_ce-noanchor-warm-5k-s43",
-            "Gate 3 control: gold set_ce, 5k, seed 43, full count head (no anchor), BCE warm start, 4xH100",
-            "set_ce",
-            False,
-        ),
-        _train(
-            "gate3-set_ce-anchor-warm-5k-s43",
-            "Gate 3: gold set_ce + residual count anchor, BCE warm start, 5k, seed 43, 4xH100",
-            "set_ce",
-            True,
-        ),
-        _train(
-            "gate3-induced-noanchor-warm-5k-s43",
-            "Gate 3 control: gold induced_marginal, 5k, seed 43, full count head (no anchor), BCE warm start, 4xH100",
-            "induced_marginal",
-            False,
-        ),
-        _train(
-            "gate3-induced-anchor-warm-5k-s43",
-            "Gate 3: gold induced_marginal + residual count anchor, BCE warm start, 5k, seed 43, 4xH100",
-            "induced_marginal",
-            True,
-        ),
+    arms = [
+        ("set_ce", False, "full count head (no anchor)"),
+        ("set_ce", True, "residual count anchor"),
+        ("induced_marginal", False, "full count head (no anchor)"),
+        ("induced_marginal", True, "residual count anchor"),
     ]
+    seeds = [int(seed) for seed in sys.argv[1:]] or [44, 45]
+    payloads = [gate1_readout_audit()]
+    for set_loss, count_anchor, mode in arms:
+        slug = "anchor" if count_anchor else "noanchor"
+        short = set_loss.replace("_marginal", "")
+        for seed in seeds:
+            payloads.append(
+                _train(
+                    f"gate3-{short}-{slug}-warm-5k-s{seed}",
+                    f"Gate 3: gold {set_loss} + {mode}, BCE warm start, 5k, seed {seed}, 4xH100",
+                    set_loss,
+                    count_anchor,
+                    seed=seed,
+                )
+            )
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for payload in payloads:
         path = OUT_DIR / (payload["name"] + ".json")
