@@ -76,6 +76,9 @@ def cache_job():
         + f'"$V/bin/python" harness/gen_text_episodes.py '
         + f'--output "{DATA}/dev.jsonl" --episodes 256 --horizon 6 '
         + f"--rule-switch-prob 0.25 --seed 3043\n"
+        + f'"$V/bin/python" harness/gen_text_episodes.py '
+        + f'--output "{DATA}/test.jsonl" --episodes 256 --horizon 8 '
+        + f"--rule-switch-prob 0.25 --seed 9043\n"
         + f'"$V/bin/python" harness/build_episodic_features.py '
         + f'--input "{DATA}/train.jsonl" --model "$MODEL" '
         + f'--model-identity BCE_S44_FINAL --output "{DATA}/train.pt" --device cuda '
@@ -120,16 +123,16 @@ def train_job(seed):
 
 
 def online_eval_job(seed):
-    """Execute model predictions, not oracle logged actions, on held-out text episodes."""
+    """Execute model predictions, not oracle logged actions, on untouched held-out test episodes."""
     head = f"{R}/runs/episodic_qwen_s{seed}/best.pt"
     out = f"{R}/runs/episodic_qwen_s{seed}/online_eval.json"
     command = (
         _env()
         + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
-        + f'test -f "{head}" && test -f "{DATA}/dev.jsonl" || '
+        + f'test -f "{head}" && test -f "{DATA}/test.jsonl" || '
         + '{ echo "missing trained head or generated held-out episodes"; exit 3; }\n'
         + f'"$V/bin/python" harness/eval_episodic_text_online.py '
-        + f'--episodes "{DATA}/dev.jsonl" --head "{head}" '
+        + f'--episodes "{DATA}/test.jsonl" --head "{head}" '
         + f'--qwen-model "$MODEL" --model-identity BCE_S44_FINAL '
         + f'--device cuda --output "{out}" '
         + f'> "{R}/logs/qz/episodic_online_s{seed}.log" 2>&1\n'
