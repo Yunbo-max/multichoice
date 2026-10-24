@@ -92,17 +92,24 @@ def gate1_readout_audit():
 
 
 def _train(
-    name, desc, set_loss, count_anchor, seed=43, data=D5K, gpus=4, eval_frac=0.2
+    name,
+    desc,
+    set_loss,
+    count_anchor,
+    seed=43,
+    data=D5K,
+    gpus=4,
+    eval_frac=0.2,
+    model=CKPT,
 ):
     out = f"{R}/runs/qz/{name}/v1"
     anchor_flag = " --count-anchor" if count_anchor else ""
-    anchor_slug = "anchor" if count_anchor else "noanchor"
     command = (
         _env()
         + f'D={data}\nDEV="{D_FULL}/dev.jsonl"\nOUT={out}\nLOG={R}/logs/qz/{name}.log\n'
         + f'mkdir -p "{R}/logs/qz" "$OUT"\ncd "{R}"\n'
         + f'"$V/bin/python" -I "{R}/harness/train_multiselect.py" --validate-only '
-        + f'--train "$D/train.jsonl" --dev "$DEV" --model "$M" '
+        + f'--train "$D/train.jsonl" --dev "$DEV" --model "{model}" '
         + f'--modules "{R}/innerjev/configs/4B/modules.json" '
         + f"--target gold --objective set --set-loss {set_loss} --count-weight 1 "
         + f"--world-size {gpus} --global-batch 64 --max-input-tokens 8192 --max-batch-tokens 8192 "
@@ -111,7 +118,7 @@ def _train(
         + f'|| {{ echo "validation failed"; tail -60 "{R}/logs/qz/{name}_validate.log"; exit 3; }}\n'
         + f'"$V/bin/torchrun" --standalone --nnodes 1 --nproc_per_node {gpus} '
         + f'"{R}/harness/train_multiselect.py" '
-        + f'--train "$D/train.jsonl" --dev "$DEV" --model "$M" '
+        + f'--train "$D/train.jsonl" --dev "$DEV" --model "{model}" '
         + f'--modules "{R}/innerjev/configs/4B/modules.json" '
         + f'--target gold --objective set --set-loss {set_loss} --count-weight 1 --output "$OUT" '
         + f"--lr 2e-6 --global-batch 64 --epochs 1 --max-input-tokens 8192 --max-batch-tokens 8192 "
@@ -126,26 +133,26 @@ def main():
     payloads = [
         gate1_readout_audit(),
         _train(
-            "gate3-set_ce-noanchor-5k-s43",
-            "Gate 3 control: gold set_ce, 5k, seed 43, full count head (no anchor), 4xH100",
+            "gate3-set_ce-noanchor-warm-5k-s43",
+            "Gate 3 control: gold set_ce, 5k, seed 43, full count head (no anchor), BCE warm start, 4xH100",
             "set_ce",
             False,
         ),
         _train(
-            "gate3-set_ce-anchor-5k-s43",
-            "Gate 3: gold set_ce + raw-logit count anchor (base start, not BCE warm start), 5k, seed 43, 4xH100",
+            "gate3-set_ce-anchor-warm-5k-s43",
+            "Gate 3: gold set_ce + residual count anchor, BCE warm start, 5k, seed 43, 4xH100",
             "set_ce",
             True,
         ),
         _train(
-            "gate3-induced-noanchor-5k-s43",
-            "Gate 3 control: gold induced_marginal, 5k, seed 43, full count head (no anchor), 4xH100",
+            "gate3-induced-noanchor-warm-5k-s43",
+            "Gate 3 control: gold induced_marginal, 5k, seed 43, full count head (no anchor), BCE warm start, 4xH100",
             "induced_marginal",
             False,
         ),
         _train(
-            "gate3-induced-anchor-5k-s43",
-            "Gate 3: gold induced_marginal + raw-logit count anchor (base start, not BCE warm start), 5k, seed 43, 4xH100",
+            "gate3-induced-anchor-warm-5k-s43",
+            "Gate 3: gold induced_marginal + residual count anchor, BCE warm start, 5k, seed 43, 4xH100",
             "induced_marginal",
             True,
         ),
