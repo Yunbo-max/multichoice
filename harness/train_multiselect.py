@@ -1357,6 +1357,12 @@ def main():
         help="set: coherent set CE; gold: marginal-BCE plus gold count-CE ablation",
     )
     parser.add_argument(
+        "--count-anchor",
+        action="store_true",
+        help="set: residual count head (count_logits + log Z_m(scores)); zero-init "
+        "correction cold-starts from the candidate-score-implied count distribution",
+    )
+    parser.add_argument(
         "--allow-legacy-targets",
         action="store_true",
         help="explicit BCE-only diagnostic override for old untyped target files",
@@ -1888,6 +1894,7 @@ def main():
                             "set_loss": args.set_loss,
                             "count_weight": args.count_weight,
                             "count_target": args.count_target,
+                            "count_anchor": args.count_anchor,
                         },
                     )
                 tokenizer.save_pretrained(destination)
@@ -1906,6 +1913,7 @@ def main():
                         "set_loss": args.set_loss,
                         "count_weight": args.count_weight,
                         "count_target": args.count_target,
+                        "count_anchor": args.count_anchor,
                     },
                 )
         torch.distributed.barrier()
@@ -1940,6 +1948,7 @@ def main():
                     count_target=args.count_target,
                     loss_family=args.set_loss,
                     count_weight=args.count_weight,
+                    count_anchor=args.count_anchor,
                 )
             else:
                 losses, bces, graphs = loss_terms(
