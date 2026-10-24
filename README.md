@@ -1,5 +1,7 @@
 # Multi-answer decision model (multichoice)
 
+> **New episodic latent-memory implementation:** [BDH-CQ-inspired cross-environment set decisions](docs/episodic_set_memory_bdh_cq.md) — persistent Memory S across actions, fresh Workspace H for each prompt, causal feedback updates, Qwen feature-cache episodic trainer, and on-policy synthetic rule-switch benchmark. This is not a reproduction of proprietary BDH-CQ.
+
 > **New experimental branch: Recurrent SetJev** — non-verbal multi-select latent recurrence, Qwen answer-slot feature caching, paired ablations and a sequential-action toy environment. See [BDH-CQ reading + reproducible pilot](docs/recurrent_set_decision_bdh_cq_reading.md). This is a BDH-CQ-inspired pilot, not a reproduction of its proprietary ARC solver.
 
 Code, data splits and result files for a **multi-answer (multi-select) decision
