@@ -20,8 +20,8 @@ def _validate_labels(*labels: Sequence[int]) -> int:
     for label in labels:
         if len(label) != n:
             raise ValueError("all labels must have the same length")
-        if any(int(v) not in (0, 1) for v in label):
-            raise ValueError("labels must be binary multi-hot")
+        if any(v not in (0, 1) or isinstance(v, bool) for v in label):
+            raise ValueError("labels must be 0/1 multi-hot, not rounded floats or bools")
     return n
 
 

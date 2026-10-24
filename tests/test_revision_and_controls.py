@@ -11,13 +11,15 @@ from recurrent_set_decision import (
     RecurrentSetConfig,
     RecurrentSetDecision,
     revision_nll,
+    revision_auxiliary_bce,
+    gold_set_nll,
 )
 
 ALLOWED = [1, 2, 3, 4]
 
 
 class RevisionNllTests(unittest.TestCase):
-    def test_pure_revision_has_less_membership_loss_than_repredict(self):
+    def test_changed_only_auxiliary_is_lower_than_full_bce_augmented_nll(self):
         torch.manual_seed(0)
         scores = torch.tensor([0.5, -0.5, 0.5, -0.5], dtype=torch.float32)
         correction = torch.zeros(5)
@@ -31,20 +33,17 @@ class RevisionNllTests(unittest.TestCase):
         )
         self.assertLess(float(pure), float(full))
 
-    def test_no_change_gives_zero_membership_for_pure_revision(self):
+    def test_no_change_has_zero_auxiliary_but_joint_nll_remains(self):
         scores = torch.tensor([0.5, -0.5, 0.5, -0.5], dtype=torch.float32)
         correction = torch.zeros(5)
         prev = torch.tensor([1, 0, 1, 0], dtype=torch.float32)
-        new = prev.clone()
-        pure = revision_nll(
-            scores, correction, prev, new, ALLOWED, unchanged_weight=0.0
+        auxiliary = revision_auxiliary_bce(scores, prev, prev)
+        self.assertEqual(float(auxiliary), 0.0)
+        combined = revision_nll(
+            scores, correction, prev, prev, ALLOWED, unchanged_weight=0.0
         )
-        # membership BCE is zero (no changes); only the count term remains,
-        # which equals the partition-normalised cardinality NLL.
-        count_only = revision_nll(
-            scores, correction, prev, new, ALLOWED, unchanged_weight=0.0
-        )
-        self.assertTrue(torch.isfinite(count_only))
+        joint = gold_set_nll(scores, correction, prev, ALLOWED)
+        self.assertTrue(torch.allclose(combined, joint, atol=1e-6))
 
     def test_rejects_invalid(self):
         scores = torch.randn(4)

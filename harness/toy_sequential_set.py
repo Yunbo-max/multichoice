@@ -101,7 +101,7 @@ def oracle_records(episodes, horizon):
     return examples
 
 
-def train(examples, epochs, seed, feedback, steps, lr):
+def train(examples, epochs, seed, feedback, steps, lr, revision_weight=0.0):
     torch.manual_seed(seed)
     rng = random.Random(seed)
     model = RecurrentSetDecision(
@@ -131,6 +131,8 @@ def train(examples, epochs, seed, feedback, steps, lr):
                 mask,
                 [list(range(1, WIDTH + 1))] * len(batch),
                 step_supervision="all",
+                revision_previous=context[:, :WIDTH],
+                revision_weight=revision_weight,
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -161,7 +163,14 @@ def rollout(model, episodes, horizon, steps, use_demo):
             native = native_logits(bits)[None]
             mask = torch.ones_like(native, dtype=torch.bool)
             demo = ep.demo[None, None] if use_demo else None
-            output = model(context, native, mask, steps=steps, demonstrations=demo)[-1]
+            history = model(context, native, mask, steps=steps, demonstrations=demo)
+            output = history[-1]
+            baseline = history[0]
+            prior = set_map(
+                baseline["scores"][0], baseline["correction"][0, : WIDTH + 1],
+                list(range(1, WIDTH + 1)),
+            )
+            prior_set = tuple(int(i in prior["indices"]) for i in range(WIDTH))
             decoded = set_map(
                 output["scores"][0],
                 output["correction"][0, : WIDTH + 1],
@@ -173,7 +182,8 @@ def rollout(model, episodes, horizon, steps, use_demo):
             exact += int(correct)
             total += 1
             all_correct &= correct
-            prev_sets.append(list(bits))
+            # Same-query r=0 is the genuine baseline for repair/damage metrics.
+            prev_sets.append(list(prior_set))
             new_sets.append(list(gold))
             pred_sets.append(list(selected))
             traj_ids.append(ep_index)
@@ -186,7 +196,9 @@ def rollout(model, episodes, horizon, steps, use_demo):
         "n_episodes": len(episodes),
         "steps": steps,
         "use_demo": use_demo,
-        "revision": revision_metrics(prev_sets, new_sets, pred_sets, traj_ids),
+        "revision_vs_initial_decision": revision_metrics(
+            prev_sets, new_sets, pred_sets, traj_ids
+        ),
     }
 
 
@@ -201,6 +213,8 @@ def main():
         "--feedback", choices=("set", "latent_only", "static", "mlp"), default="set"
     )
     p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--revision-weight", type=float, default=0.0,
+                   help="auxiliary add/remove supervision using previous action set")
     p.add_argument("--seed", type=int, default=43)
     args = p.parse_args()
     if args.horizon < 1 or args.horizon > 4 or args.steps < 1:
@@ -208,7 +222,10 @@ def main():
     training = make_episodes(args.train_episodes, args.seed)
     evaluation = make_episodes(args.eval_episodes, args.seed + 100_000)
     examples = oracle_records(training, args.horizon)
-    model = train(examples, args.epochs, args.seed, args.feedback, args.steps, args.lr)
+    model = train(
+        examples, args.epochs, args.seed, args.feedback, args.steps,
+        args.lr, revision_weight=args.revision_weight,
+    )
     report = {
         "config": vars(args),
         "evaluations": {

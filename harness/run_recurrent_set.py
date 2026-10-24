@@ -281,10 +281,12 @@ def evaluate_model(
     model.eval()
     correct, total, true_positive, false_positive, false_negative = 0, 0, 0, 0, 0
     count_abs, count_correct, nll_total = 0, 0, 0.0
+    initial_right = initial_wrong = rescued = damaged = 0
     for start in range(0, len(cache["ids"]), batch_size):
         inds = list(range(start, min(len(cache["ids"]), start + batch_size)))
         context, native, mask, gold, allowed = take(cache, inds, device)
         history = model(context, native, mask, steps=steps)
+        initial = history[0]
         final = history[-1]
         for j, support in enumerate(allowed):
             k = int(mask[j].sum().item())
@@ -294,7 +296,20 @@ def evaluate_model(
             pred = torch.zeros(k, device=device, dtype=torch.bool)
             pred[decoded["indices"]] = True
             ref = gold[j, :k].bool()
-            correct += int(torch.equal(pred, ref))
+            initial_decoded = set_map(
+                initial["scores"][j, :k],
+                initial["correction"][j, : k + 1],
+                support,
+            )
+            before = torch.zeros(k, device=device, dtype=torch.bool)
+            before[initial_decoded["indices"]] = True
+            was_right = torch.equal(before, ref)
+            now_right = torch.equal(pred, ref)
+            initial_right += int(was_right)
+            initial_wrong += int(not was_right)
+            rescued += int(not was_right and now_right)
+            damaged += int(was_right and not now_right)
+            correct += int(now_right)
             true_positive += int((pred & ref).sum())
             false_positive += int((pred & ~ref).sum())
             false_negative += int((~pred & ref).sum())
@@ -322,6 +337,11 @@ def evaluate_model(
         "count_accuracy": count_correct / total,
         "count_mae": count_abs / total,
         "set_nll": nll_total / total,
+        "initial_em": initial_right / total,
+        "repair_rate": rescued / initial_wrong if initial_wrong else 0.0,
+        "broken_rate": damaged / initial_right if initial_right else 0.0,
+        "rescued_questions": rescued,
+        "damaged_questions": damaged,
         "steps": steps,
     }
 
@@ -330,6 +350,19 @@ def log_partition_for_eval(scores, corrections, support):
     from recurrent_set_decision import set_log_partition
 
     return set_log_partition(scores, corrections, support)
+
+
+@torch.no_grad()
+def initial_native_map(native, mask, allowed):
+    """Per-question native 0-step MAP sets; uses no gold labels."""
+    if len(allowed) != native.shape[0]:
+        raise ValueError("allowed count / batch mismatch")
+    prior = torch.zeros_like(native)
+    for i, counts in enumerate(allowed):
+        k = int(mask[i].sum().item())
+        initial = set_map(native[i, :k], native.new_zeros(k + 1), counts)
+        prior[i, initial["indices"]] = 1
+    return prior
 
 
 def load_model_checkpoint(path: Path, device: torch.device):
@@ -348,6 +381,10 @@ def train_command(args) -> None:
         )
     if not math.isfinite(args.lr) or args.lr <= 0 or args.grad_clip <= 0:
         raise ValueError("learning rate and gradient clipping must be positive")
+    if not math.isfinite(args.revision_weight) or args.revision_weight < 0:
+        raise ValueError("revision_weight must be finite and nonnegative")
+    if not math.isfinite(args.unchanged_weight) or not 0 <= args.unchanged_weight <= 1:
+        raise ValueError("unchanged_weight must be finite in [0,1]")
     train_cache, dev_cache = read_caches(args.train_cache, args.dev_cache)
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA unavailable")
@@ -380,6 +417,9 @@ def train_command(args) -> None:
             "steps": args.steps,
             "step_supervision": args.step_supervision,
             "monotonic_weight": args.monotonic_weight,
+            "revision_weight": args.revision_weight,
+            "unchanged_weight": args.unchanged_weight,
+            "revision_source": "frozen initial native set-MAP (no gold labels)",
             "lr": args.lr,
             "epochs": args.epochs,
             "batch_size": args.batch_size,
@@ -398,6 +438,10 @@ def train_command(args) -> None:
             context, native, mask, gold, allowed = take(train_cache, inds, device)
             optimizer.zero_grad(set_to_none=True)
             history = model(context, native, mask, steps=args.steps)
+            previous = (
+                initial_native_map(native, mask, allowed)
+                if args.revision_weight else None
+            )
             loss = loss_over_steps(
                 history,
                 gold,
@@ -405,6 +449,9 @@ def train_command(args) -> None:
                 allowed,
                 step_supervision=args.step_supervision,
                 monotonic_weight=args.monotonic_weight,
+                revision_previous=previous,
+                revision_weight=args.revision_weight,
+                unchanged_weight=args.unchanged_weight,
             )
             if not torch.isfinite(loss):
                 raise FloatingPointError("nonfinite training loss")
@@ -549,6 +596,10 @@ def parser() -> argparse.ArgumentParser:
     train.add_argument("--steps", type=int, default=4)
     train.add_argument("--step-supervision", choices=("all", "last"), default="all")
     train.add_argument("--monotonic-weight", type=float, default=0.0)
+    train.add_argument("--revision-weight", type=float, default=0.0,
+                       help="weight of added/removed-option BCE relative to frozen native set MAP")
+    train.add_argument("--unchanged-weight", type=float, default=0.0,
+                       help="relative auxiliary BCE weight on unchanged options, 0..1")
     train.add_argument("--batch-size", type=int, default=32)
     train.add_argument("--epochs", type=int, default=5)
     train.add_argument("--lr", type=float, default=3e-4)
