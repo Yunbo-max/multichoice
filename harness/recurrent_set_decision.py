@@ -84,6 +84,38 @@ def gold_set_nll(
     return loss / scores.numel() if normalize else loss
 
 
+def revision_auxiliary_bce(
+    scores: Tensor,
+    previous_set: Tensor,
+    target_set: Tensor,
+    *,
+    unchanged_weight: float = 0.0,
+) -> Tensor:
+    """Auxiliary loss emphasizing options changed from the *previous* set.
+
+    This term alone has direct per-logit gradients only for changed options
+    when unchanged_weight=0. It is NOT a normalized set likelihood. Combine it
+    with gold_set_nll to retain coherent set / cardinality supervision.
+    """
+    import torch.nn.functional as F
+
+    if scores.ndim != 1 or previous_set.shape != scores.shape or target_set.shape != scores.shape:
+        raise ValueError("scores/previous_set/target_set must be equal-length vectors")
+    if not bool(torch.all((previous_set == 0) | (previous_set == 1))):
+        raise ValueError("previous set must be binary")
+    if not bool(torch.all((target_set == 0) | (target_set == 1))):
+        raise ValueError("target set must be binary")
+    if not math.isfinite(unchanged_weight) or not 0.0 <= unchanged_weight <= 1.0:
+        raise ValueError("unchanged_weight must be finite in [0,1]")
+    changed = (previous_set != target_set).to(scores.dtype)
+    weights = changed + unchanged_weight * (1.0 - changed)
+    return (
+        F.binary_cross_entropy_with_logits(
+            scores, target_set.to(scores.dtype), reduction="none"
+        ) * weights
+    ).mean()
+
+
 def revision_nll(
     scores: Tensor,
     correction: Tensor,
@@ -94,42 +126,19 @@ def revision_nll(
     normalize: bool = True,
     unchanged_weight: float = 0.0,
 ) -> Tensor:
-    """Revision NLL: supervise the transition ``prev -> new``, emphasising the diff.
+    """Exact set NLL PLUS auxiliary change-weighted membership BCE.
 
-    The model pays full BCE on the options that changed (add/remove) and
-    ``unchanged_weight`` (default 0) on the options that stayed, plus the count
-    CE toward ``|new|``. With ``unchanged_weight=1`` this is ordinary full-set
-    re-prediction; with ``0`` it is pure revision (gradient only flows through the
-    changed options, the rest are inherited from ``prev``).
+    This is not a 'pure revision likelihood'. Even with unchanged_weight=0,
+    the exact set NLL backpropagates into *all* scores via the partition Z;
+    the unchanged candidates are not inherited or frozen. Likewise
+    unchanged_weight=1 produces set NLL + BCE, NOT plain re-prediction.
     """
-    import torch.nn.functional as F
-
-    if scores.shape != prev.shape or new.shape != prev.shape or prev.ndim != 1:
-        raise ValueError("scores/prev/new must be same-shaped 1D tensors")
-    if not bool(
-        torch.all((prev == 0) | (prev == 1)) and torch.all((new == 0) | (new == 1))
-    ):
-        raise ValueError("prev/new must be binary multi-hot")
-    if not 0.0 <= unchanged_weight <= 1.0:
-        raise ValueError("unchanged_weight must be in [0,1]")
-    k = scores.numel()
-    m = int(new.sum().item())
-    if m not in allowed:
-        raise ValueError("new cardinality violates public protocol")
-    changed = (prev != new).to(scores.dtype)
-    weight = changed + unchanged_weight * (1.0 - changed)
-    membership = (
-        F.binary_cross_entropy_with_logits(
-            scores, new.to(scores.dtype), reduction="none"
-        )
-        * weight
-    ).sum()
-    count = (
-        set_log_partition(scores, correction, allowed)
-        - torch.dot(scores, new.to(scores.dtype))
-        - correction[m]
+    aux = revision_auxiliary_bce(
+        scores, prev, new, unchanged_weight=unchanged_weight
     )
-    return (membership + count) / k if normalize else (membership + count)
+    base = gold_set_nll(scores, correction, new, allowed, normalize=True)
+    combined = base + aux
+    return combined if normalize else combined * scores.numel()
 
 
 @torch.no_grad()
