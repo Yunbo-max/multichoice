@@ -184,8 +184,10 @@ def one_episode_batch(
             ),
         )
         current = executed
+    mean_set_nll = torch.stack(per_step_losses).mean()
     return {
-        "loss": torch.stack(per_step_losses).mean(),
+        "loss": mean_set_nll,
+        "set_nll_per_option": float(mean_set_nll.detach()),
         "first_em": first_correct / batch,
         "later_em": later_correct / later_total if later_total else float("nan"),
         "step_em": total_exact / (batch * horizon),
@@ -244,7 +246,7 @@ def training(args: argparse.Namespace) -> None:
                 ]
                 eval_results["carry" if carry else "reset_every_step"] = {
                     key: sum(float(x[key]) for x in reports) / len(reports)
-                    for key in ("first_em", "later_em", "step_em", "trajectory_em")
+                    for key in ("first_em", "later_em", "step_em", "trajectory_em", "set_nll_per_option")
                 }
         record = {
             "epoch": epoch + 1, "train_set_nll": epoch_loss / args.train_batches,
@@ -296,7 +298,7 @@ def evaluating(args: argparse.Namespace) -> None:
             ]
             results["carry" if carry else "reset_every_step"] = {
                 key: sum(float(x[key]) for x in trials) / len(trials)
-                for key in ("first_em", "later_em", "step_em", "trajectory_em")
+                for key in ("first_em", "later_em", "step_em", "trajectory_em", "set_nll_per_option")
             }
     print(json.dumps({
         "schema": SCHEMA, "checkpoint": str(args.checkpoint),
