@@ -102,6 +102,8 @@ Compare first/later exact set EM, strict whole-trajectory success and set NLL,
 for carry vs reset. Do not claim improvements without repeated seeds and
 equal-compute controls.
 
+**Artifact safety:** staged QZ jobs now use fresh run roots `runs/episodic_data_causal_v2/` and `runs/episodic_qwen_causal_v2_s43/44/45/` rather than reusing prior episodic outputs. Jobs fail fast if these fresh paths already exist. Keep the code SHA together with every result.
+
 ## Outstanding research limits
 
 1. No actual H100 results or full production-core test suite executed by this
