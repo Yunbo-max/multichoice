@@ -151,6 +151,8 @@ def main():
     args = p.parse_args()
     if args.limit < 0:
         p.error("--limit must be nonnegative")
+    if args.output is not None and args.output.exists():
+        raise FileExistsError("online report already exists; refuse expensive rerun")
     episodes = []
     with args.episodes.open(encoding="utf-8") as f:
         for line in f:
