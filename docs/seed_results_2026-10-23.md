@@ -142,3 +142,33 @@ torchrun --standalone --nnodes 1 --nproc_per_node 4 harness/train_multiselect.py
 
 The data split is in `data/multiselect_grouped_multi/`; its statistics are in
 `data/multiselect_grouped_multi/summary.json`.
+
+## Soft-teacher pilot on the 5k subset (10-23, single seed, preliminary)
+
+A 5k stratified subset (`data/multiselect_grouped_multi_5k`, train 5,000 /
+dev 1,000) was used for a first soft-teacher probe, seed 43 only, same 4×H100
+recipe. The two `soft_gold*` arms are **gold controls on the same 5k subset**
+(gold BCE and gold `set_ce`), so the soft-teacher arms are compared against an
+equal-data gold baseline, not against the full 28k table above.
+
+| Arm | Step | Question EM | F1 | Precision | Recall |
+|---|---:|---:|---:|---:|---:|
+| gold BCE (5k control) | 79 | 0.5015 | 0.8855 | 0.8673 | 0.9045 |
+| gold `set_ce` (5k control) | 64 | 0.3937 | 0.8554 | 0.7820 | 0.9439 |
+| soft teacher `set_ce` | 48 | 0.2439 | 0.8115 | 0.6964 | 0.9722 |
+| soft teacher `induced_marginal` | 64 | 0.2023 | 0.8058 | 0.6817 | 0.9851 |
+| soft teacher `independent_marginal` | 48 | 0.1224 | 0.7817 | 0.6434 | 0.9960 |
+| soft teacher `marginal` | — | (no `selection.json`) | | | |
+
+Interpretation:
+
+- On the same 5k subset, the soft-teacher arms are **strictly worse** than the
+  gold control (best soft-teacher EM 0.2439 vs gold `set_ce` 0.3937 and gold
+  BCE 0.5015). Raw soft teacher targets are not usable as-is.
+- The soft-teacher arms collapse to over-prediction: recall saturates toward
+  ~0.97–1.00 while precision falls to ~0.64–0.70, i.e. the model learns to mark
+  nearly every candidate rather than to resolve the set.
+- This is a single-seed 5k pilot and is reported as a negative signal only; it
+  is not directly comparable to the full-data 3-seed table above.
+- Teacher targets come from `teacher_gold5k_20261023`; the teacher-generation
+  truncation issue described under "Teacher status" still applies.
