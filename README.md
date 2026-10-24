@@ -1,5 +1,7 @@
 # Multi-answer decision model (multichoice)
 
+> **New experimental branch: Recurrent SetJev** — non-verbal multi-select latent recurrence, Qwen answer-slot feature caching, paired ablations and a sequential-action toy environment. See [BDH-CQ reading + reproducible pilot](docs/recurrent_set_decision_bdh_cq_reading.md). This is a BDH-CQ-inspired pilot, not a reproduction of its proprietary ARC solver.
+
 Code, data splits and result files for a **multi-answer (multi-select) decision
 model** built on Qwen3.5-4B. The readout follows the SII / InnerJev decision
 recipe (answer-slot last-token readout over the 255 single-token option labels),
