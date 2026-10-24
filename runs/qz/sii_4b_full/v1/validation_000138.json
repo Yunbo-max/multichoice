@@ -1,0 +1,318 @@
+{
+  "n": 7506,
+  "score": 78.42724390218785,
+  "nll": 0.717153986891719,
+  "sources": {
+    "language-understanding/banking77": {
+      "n": 85,
+      "score": 92.94117647058823,
+      "nll": 0.3768128144423172,
+      "accuracy": 0.9294117647058824
+    },
+    "language-understanding/boolq": {
+      "n": 257,
+      "score": 91.05058365758755,
+      "nll": 0.23463081617874296,
+      "accuracy": 0.9105058365758755
+    },
+    "language-understanding/clinc150": {
+      "n": 202,
+      "score": 83.66336633663366,
+      "nll": 0.8116881066147342,
+      "accuracy": 0.8366336633663366
+    },
+    "decision-rules-calculation/decider": {
+      "n": 100,
+      "score": 71.0,
+      "nll": 0.8318397263878442,
+      "accuracy": 0.71
+    },
+    "decision-rules-calculation/jevforge": {
+      "n": 109,
+      "score": 53.21100917431193,
+      "nll": 1.7105594659125936,
+      "accuracy": 0.5321100917431193
+    },
+    "decision-rules-calculation/kev": {
+      "n": 103,
+      "score": 87.5062185940221,
+      "nll": 0.7360309659586499,
+      "score_nmae": 0.12311506473927618,
+      "accuracy": 0.8732394366197183
+    },
+    "language-understanding/mnli": {
+      "n": 83,
+      "score": 65.06024096385542,
+      "nll": 0.6294333328926905,
+      "accuracy": 0.6506024096385542
+    },
+    "language-understanding/nlu-eval-68": {
+      "n": 101,
+      "score": 76.23762376237624,
+      "nll": 1.0654270888564108,
+      "accuracy": 0.7623762376237624
+    },
+    "language-understanding/paws": {
+      "n": 83,
+      "score": 80.72289156626506,
+      "nll": 0.4028179359537549,
+      "accuracy": 0.8072289156626506
+    },
+    "decision-rules-calculation/typed-decisions": {
+      "n": 100,
+      "score": 75.77674418982832,
+      "nll": 0.9479857948562956,
+      "soft_noul_mae": 0.31354011764032697,
+      "score_nmae": 0.10760200110926742,
+      "accuracy": 0.6944444444444444
+    },
+    "language-understanding/vitaminc": {
+      "n": 83,
+      "score": 75.90361445783132,
+      "nll": 0.7502967480037572,
+      "accuracy": 0.7590361445783133
+    },
+    "language-understanding/chaosnli": {
+      "n": 100,
+      "score": 90.37207772155341,
+      "nll": 0.6522801422469665,
+      "accuracy": 1.0,
+      "soft_noul_mae": 0.19255844556893173
+    },
+    "safety-subjective-judgment/civil_comments": {
+      "n": 100,
+      "score": 85.77150526306376,
+      "nll": 0.9592349298295146,
+      "accuracy": 1.0,
+      "soft_noul_mae": 0.2845698947387248
+    },
+    "general-knowledge/arc_challenge": {
+      "n": 200,
+      "score": 93.0,
+      "nll": 0.23300687422852767,
+      "accuracy": 0.93
+    },
+    "general-knowledge/arc_easy": {
+      "n": 200,
+      "score": 96.5,
+      "nll": 0.0972013271821796,
+      "accuracy": 0.965
+    },
+    "chinese-medicine/cmb": {
+      "n": 200,
+      "score": 73.5,
+      "nll": 0.8246666244529999,
+      "accuracy": 0.735
+    },
+    "chinese-medicine/cmexam": {
+      "n": 200,
+      "score": 74.5,
+      "nll": 0.7106062167757519,
+      "accuracy": 0.745
+    },
+    "commonsense/commonsenseqa": {
+      "n": 200,
+      "score": 72.5,
+      "nll": 0.8861324899345092,
+      "accuracy": 0.725
+    },
+    "commonsense/hellaswag": {
+      "n": 200,
+      "score": 87.0,
+      "nll": 0.41607679388073504,
+      "accuracy": 0.87
+    },
+    "logic/logiqa": {
+      "n": 200,
+      "score": 73.0,
+      "nll": 0.8031067429063729,
+      "accuracy": 0.73
+    },
+    "english-medicine/medmcqa": {
+      "n": 200,
+      "score": 68.0,
+      "nll": 0.8792902645674089,
+      "accuracy": 0.68
+    },
+    "english-medicine/medqa": {
+      "n": 200,
+      "score": 74.0,
+      "nll": 0.7040441095923958,
+      "accuracy": 0.74
+    },
+    "general-knowledge/mmlu_aux": {
+      "n": 200,
+      "score": 86.5,
+      "nll": 0.4413585469365502,
+      "accuracy": 0.865
+    },
+    "general-knowledge/openbookqa": {
+      "n": 200,
+      "score": 83.0,
+      "nll": 0.47079163490608605,
+      "accuracy": 0.83
+    },
+    "logic/reclor": {
+      "n": 200,
+      "score": 81.5,
+      "nll": 0.4474053533338639,
+      "accuracy": 0.815
+    },
+    "general-knowledge/sciq": {
+      "n": 200,
+      "score": 95.0,
+      "nll": 0.11774738091320724,
+      "accuracy": 0.95
+    },
+    "commonsense/winogrande": {
+      "n": 200,
+      "score": 91.0,
+      "nll": 0.26853929571394314,
+      "accuracy": 0.91
+    },
+    "knowledge-reasoning/aqua": {
+      "n": 200,
+      "score": 34.5,
+      "nll": 1.5970280609927214,
+      "accuracy": 0.345
+    },
+    "knowledge-reasoning/case_hold": {
+      "n": 200,
+      "score": 71.0,
+      "nll": 0.8642670605963739,
+      "accuracy": 0.71
+    },
+    "knowledge-reasoning/cmb": {
+      "n": 200,
+      "score": 65.0,
+      "nll": 0.9122339555975089,
+      "accuracy": 0.65
+    },
+    "knowledge-reasoning/cmexam": {
+      "n": 200,
+      "score": 71.0,
+      "nll": 0.7602923392126523,
+      "accuracy": 0.71
+    },
+    "knowledge-reasoning/ecthr_a": {
+      "n": 200,
+      "score": 72.0,
+      "nll": 0.5296734485468318,
+      "accuracy": 0.72
+    },
+    "knowledge-reasoning/ecthr_b": {
+      "n": 200,
+      "score": 75.5,
+      "nll": 0.4969721425118966,
+      "accuracy": 0.755
+    },
+    "knowledge-reasoning/headqa": {
+      "n": 200,
+      "score": 76.0,
+      "nll": 0.6417374987155333,
+      "accuracy": 0.76
+    },
+    "knowledge-reasoning/ledgar": {
+      "n": 200,
+      "score": 67.0,
+      "nll": 1.5273270338177503,
+      "accuracy": 0.67
+    },
+    "knowledge-reasoning/logiqa2": {
+      "n": 200,
+      "score": 71.0,
+      "nll": 0.8133483090459473,
+      "accuracy": 0.71
+    },
+    "knowledge-reasoning/mathqa": {
+      "n": 200,
+      "score": 30.0,
+      "nll": 1.6521187331698115,
+      "accuracy": 0.3
+    },
+    "knowledge-reasoning/medmcqa": {
+      "n": 200,
+      "score": 69.5,
+      "nll": 0.8715732899602664,
+      "accuracy": 0.695
+    },
+    "knowledge-reasoning/quality": {
+      "n": 200,
+      "score": 76.0,
+      "nll": 0.6975960054803023,
+      "accuracy": 0.76
+    },
+    "knowledge-reasoning/race_high": {
+      "n": 200,
+      "score": 87.0,
+      "nll": 0.36625902161936075,
+      "accuracy": 0.87
+    },
+    "knowledge-reasoning/scienceqa": {
+      "n": 200,
+      "score": 90.0,
+      "nll": 0.2098020949674294,
+      "accuracy": 0.9
+    },
+    "knowledge-reasoning/scotus": {
+      "n": 200,
+      "score": 66.0,
+      "nll": 1.3570071743156018,
+      "accuracy": 0.66
+    },
+    "knowledge-reasoning/unfair_tos": {
+      "n": 200,
+      "score": 93.0,
+      "nll": 0.19012258789273695,
+      "accuracy": 0.93
+    }
+  },
+  "capabilities": {
+    "language-understanding": {
+      "score": 81.99394686708636,
+      "nll": 0.6154233731486718,
+      "n": 994
+    },
+    "decision-rules-calculation": {
+      "score": 71.8734929895406,
+      "nll": 1.0566039882788458,
+      "n": 412
+    },
+    "safety-subjective-judgment": {
+      "score": 85.77150526306376,
+      "nll": 0.9592349298295146,
+      "n": 100
+    },
+    "general-knowledge": {
+      "score": 90.8,
+      "nll": 0.2720211528333102,
+      "n": 1000
+    },
+    "chinese-medicine": {
+      "score": 74.0,
+      "nll": 0.7676364206143759,
+      "n": 400
+    },
+    "commonsense": {
+      "score": 83.5,
+      "nll": 0.5235828598430624,
+      "n": 600
+    },
+    "logic": {
+      "score": 77.25,
+      "nll": 0.6252560481201184,
+      "n": 400
+    },
+    "english-medicine": {
+      "score": 71.0,
+      "nll": 0.7916671870799024,
+      "n": 400
+    },
+    "knowledge-reasoning": {
+      "score": 69.65625,
+      "nll": 0.8429599222776704,
+      "n": 3200
+    }
+  },
+  "step": 138
+}

@@ -1,0 +1,22 @@
+=== SII eval ===
+model=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/SII-4B-LoRA
+input=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/data/jeval/sii_input.jsonl
+outdir=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval
+replicas=8 gpus_per_replica=1 batch=8
+max_batch_tokens=32768 max_input_tokens=100000 limit=0
+model complete: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/SII-4B-LoRA (2 safetensors shards)
+[launch] replica 0 gpus=0 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00000.jsonl
+[launch] replica 1 gpus=1 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00001.jsonl
+[launch] replica 2 gpus=2 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00002.jsonl
+[launch] replica 3 gpus=3 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00003.jsonl
+[launch] replica 4 gpus=4 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00004.jsonl
+[launch] replica 5 gpus=5 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00005.jsonl
+[launch] replica 6 gpus=6 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00006.jsonl
+[launch] replica 7 gpus=7 -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/parts/part-00007.jsonl
+[launch] all replicas finished (fail=0)
+merged 8 parts -> /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/predictions.jsonl (11257 unique ids)
+{"shards": 8, "items": 11257, "aggregate_items_per_s": 5.328930918447808, "util_mean_of_shards": 75.47166761425646}
+choice+noul n=10938  acc=67.20%  ECE15=0.1406  Brier=0.4849
+score n=319  NMAE=0.2079  exact=49.22%
+missing=0  invalid=0
+full summary: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_released_jeval/summary.json

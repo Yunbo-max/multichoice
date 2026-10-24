@@ -1,0 +1,4 @@
+choice+noul n=10938  acc=67.20%  ECE15=0.1406  Brier=0.4849
+score n=319  NMAE=0.2079  exact=49.22%
+missing=0  invalid=0
+full summary: /inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/runs/qz/sii_4b_full_jeval_v2/summary.json
