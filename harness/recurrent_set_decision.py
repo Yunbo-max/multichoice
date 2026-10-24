@@ -8,6 +8,7 @@ membership scores and count correction. All parameters are shared across steps.
 Only the published *memory/workspace interface* of BDH-CQ is borrowed. Its
 internal BDH-CQ update equations and training recipe are proprietary.
 """
+
 from __future__ import annotations
 
 import math
@@ -28,18 +29,23 @@ class RecurrentSetConfig:
     context_dim: int
     latent_dim: int = 128
     max_options: int = 32
-    feedback: str = "set"  # set | latent_only | static
+    feedback: str = "set"  # set | latent_only | static | mlp
+    max_steps: int = 8
 
     def __post_init__(self):
         if self.context_dim < 1 or self.latent_dim < 4:
             raise ValueError("context_dim must be positive and latent_dim >= 4")
         if self.max_options < 2:
             raise ValueError("max_options must be >= 2")
-        if self.feedback not in ("set", "latent_only", "static"):
+        if self.feedback not in ("set", "latent_only", "static", "mlp"):
             raise ValueError("unknown feedback mode")
+        if self.max_steps < 1:
+            raise ValueError("max_steps must be >= 1")
 
 
-def set_log_partition(scores: Tensor, correction: Tensor, allowed: Sequence[int]) -> Tensor:
+def set_log_partition(
+    scores: Tensor, correction: Tensor, allowed: Sequence[int]
+) -> Tensor:
     """Exact O(K^2) log-partition over permitted non/empty subsets."""
     if scores.ndim != 1 or correction.ndim != 1:
         raise ValueError("scores and correction must be 1D")
@@ -59,7 +65,10 @@ def set_log_partition(scores: Tensor, correction: Tensor, allowed: Sequence[int]
 
 
 def gold_set_nll(
-    scores: Tensor, correction: Tensor, gold: Tensor, allowed: Sequence[int],
+    scores: Tensor,
+    correction: Tensor,
+    gold: Tensor,
+    allowed: Sequence[int],
     normalize: bool = True,
 ) -> Tensor:
     """Differentiable -log P(S_gold|x), no oracle count used at inference."""
@@ -73,6 +82,54 @@ def gold_set_nll(
     loss = set_log_partition(scores, correction, allowed)
     loss = loss - torch.dot(scores, gold.to(scores.dtype)) - correction[m]
     return loss / scores.numel() if normalize else loss
+
+
+def revision_nll(
+    scores: Tensor,
+    correction: Tensor,
+    prev: Tensor,
+    new: Tensor,
+    allowed: Sequence[int],
+    *,
+    normalize: bool = True,
+    unchanged_weight: float = 0.0,
+) -> Tensor:
+    """Revision NLL: supervise the transition ``prev -> new``, emphasising the diff.
+
+    The model pays full BCE on the options that changed (add/remove) and
+    ``unchanged_weight`` (default 0) on the options that stayed, plus the count
+    CE toward ``|new|``. With ``unchanged_weight=1`` this is ordinary full-set
+    re-prediction; with ``0`` it is pure revision (gradient only flows through the
+    changed options, the rest are inherited from ``prev``).
+    """
+    import torch.nn.functional as F
+
+    if scores.shape != prev.shape or new.shape != prev.shape or prev.ndim != 1:
+        raise ValueError("scores/prev/new must be same-shaped 1D tensors")
+    if not bool(
+        torch.all((prev == 0) | (prev == 1)) and torch.all((new == 0) | (new == 1))
+    ):
+        raise ValueError("prev/new must be binary multi-hot")
+    if not 0.0 <= unchanged_weight <= 1.0:
+        raise ValueError("unchanged_weight must be in [0,1]")
+    k = scores.numel()
+    m = int(new.sum().item())
+    if m not in allowed:
+        raise ValueError("new cardinality violates public protocol")
+    changed = (prev != new).to(scores.dtype)
+    weight = changed + unchanged_weight * (1.0 - changed)
+    membership = (
+        F.binary_cross_entropy_with_logits(
+            scores, new.to(scores.dtype), reduction="none"
+        )
+        * weight
+    ).sum()
+    count = (
+        set_log_partition(scores, correction, allowed)
+        - torch.dot(scores, new.to(scores.dtype))
+        - correction[m]
+    )
+    return (membership + count) / k if normalize else (membership + count)
 
 
 @torch.no_grad()
@@ -102,7 +159,9 @@ def set_map(scores: Tensor, correction: Tensor, allowed: Sequence[int]) -> dict:
     return {
         "indices": sorted(order[:m_best]),
         "count_probs": rho,
-        "set_log_probability": prefix[m_best] + float(correction[m_best]) - float(lognorm),
+        "set_log_probability": prefix[m_best]
+        + float(correction[m_best])
+        - float(lognorm),
     }
 
 
@@ -125,13 +184,21 @@ class RecurrentSetDecision(nn.Module):
         super().__init__()
         self.config = config
         d = config.latent_dim
-        self.context_proj = nn.Sequential(nn.Linear(config.context_dim, d), nn.LayerNorm(d))
+        self.context_proj = nn.Sequential(
+            nn.Linear(config.context_dim, d), nn.LayerNorm(d)
+        )
         self.demo_proj = nn.Sequential(nn.Linear(config.context_dim, d), nn.Tanh())
         self.memory_cell = nn.GRUCell(d, d)
         self.init_state = nn.Sequential(nn.Linear(2 * d, d), nn.Tanh())
         self.position_emb = nn.Embedding(config.max_options, d)
         self.candidate_proj = nn.Sequential(nn.Linear(4, d), nn.Tanh())
         self.state_cell = nn.GRUCell(d, d)
+        # Non-recurrent control ("mlp"): distinct per-step layers, no weight
+        # sharing and no temporal state. Same per-step width as the GRU cell, so
+        # the recurrent vs mlp comparison isolates shared-weight recurrence.
+        self.state_stack = nn.ModuleList(
+            [nn.Sequential(nn.Linear(d, d), nn.Tanh()) for _ in range(config.max_steps)]
+        )
         self.score_norm = nn.LayerNorm(d)
         self.score_delta = nn.Linear(d, 1)
         self.count_delta = nn.Linear(d, config.max_options + 1)
@@ -143,7 +210,9 @@ class RecurrentSetDecision(nn.Module):
         nn.init.zeros_(self.count_delta.bias)
 
     def encode_memory(
-        self, context: Tensor, demonstrations: Optional[Tensor],
+        self,
+        context: Tensor,
+        demonstrations: Optional[Tensor],
         demonstration_mask: Optional[Tensor],
     ) -> Tensor:
         b, _ = context.shape
@@ -153,17 +222,25 @@ class RecurrentSetDecision(nn.Module):
             if demonstration_mask is not None:
                 raise ValueError("demo mask supplied without demonstrations")
             return memory
-        if demonstrations.ndim != 3 or demonstrations.shape[0] != b or \
-                demonstrations.shape[-1] != self.config.context_dim:
+        if (
+            demonstrations.ndim != 3
+            or demonstrations.shape[0] != b
+            or demonstrations.shape[-1] != self.config.context_dim
+        ):
             raise ValueError("demonstrations must be B x D x context_dim")
-        if demonstration_mask is not None and demonstration_mask.shape != demonstrations.shape[:2]:
+        if (
+            demonstration_mask is not None
+            and demonstration_mask.shape != demonstrations.shape[:2]
+        ):
             raise ValueError("demonstration mask shape mismatch")
         for t in range(demonstrations.shape[1]):
             proposal = self.memory_cell(self.demo_proj(demonstrations[:, t]), memory)
             if demonstration_mask is None:
                 memory = proposal
             else:
-                memory = torch.where(demonstration_mask[:, t, None].bool(), proposal, memory)
+                memory = torch.where(
+                    demonstration_mask[:, t, None].bool(), proposal, memory
+                )
         return memory
 
     def forward(
@@ -191,11 +268,16 @@ class RecurrentSetDecision(nn.Module):
             raise ValueError("every question needs candidates")
         if not bool((mask.long().cummin(dim=1).values == mask.long()).all()):
             raise ValueError("candidate mask must be prefix-valid")
-        if not torch.isfinite(context).all() or not torch.isfinite(native_logits[mask]).all():
+        if (
+            not torch.isfinite(context).all()
+            or not torch.isfinite(native_logits[mask]).all()
+        ):
             raise ValueError("nonfinite model features")
         mode = feedback or self.config.feedback
-        if mode not in ("set", "latent_only", "static"):
+        if mode not in ("set", "latent_only", "static", "mlp"):
             raise ValueError("unknown feedback mode")
+        if mode == "mlp" and steps > self.config.max_steps:
+            raise ValueError("mlp mode requires steps <= max_steps")
 
         context = context.float()
         native = torch.where(mask, native_logits.float(), 0.0)
@@ -209,8 +291,8 @@ class RecurrentSetDecision(nn.Module):
         )
         history = [{"scores": scores, "correction": correction, "latent": latent}]
         positions = self.position_emb(torch.arange(k, device=context.device))[None]
-        for _ in range(steps):
-            incoming = scores if mode == "set" else native
+        for r in range(steps):
+            incoming = scores if mode in ("set", "mlp") else native
             p = torch.sigmoid(incoming)
             # Scaled logits limit numerical dominance, not output logits.
             evidence = torch.stack(
@@ -218,17 +300,24 @@ class RecurrentSetDecision(nn.Module):
             )
             candidate = self.candidate_proj(evidence) + positions
             reference = initial if mode == "static" else latent
-            attn = (candidate * reference[:, None]).sum(dim=-1) / math.sqrt(self.config.latent_dim)
+            attn = (candidate * reference[:, None]).sum(dim=-1) / math.sqrt(
+                self.config.latent_dim
+            )
             attn = attn.masked_fill(~mask, -torch.inf)
             attn = torch.softmax(attn, dim=1)
             summary = (candidate * attn[..., None]).sum(dim=1)
-            next_latent = self.state_cell(question + memory + summary, reference)
+            if mode == "mlp":
+                next_latent = self.state_stack[r](question + memory + summary)
+            else:
+                next_latent = self.state_cell(question + memory + summary, reference)
             update = self.score_norm(candidate + next_latent[:, None])
             delta = self.score_delta(torch.tanh(update)).squeeze(-1)
             scores = scores + torch.where(mask, delta, 0.0)
             correction = self.count_delta(next_latent)
             latent = initial if mode == "static" else next_latent
-            history.append({"scores": scores, "correction": correction, "latent": next_latent})
+            history.append(
+                {"scores": scores, "correction": correction, "latent": next_latent}
+            )
         return history
 
 
@@ -253,17 +342,20 @@ def loss_over_steps(
         per_row = []
         for i, counts in enumerate(allowed):
             k = int(mask[i].sum().item())
-            per_row.append(gold_set_nll(
-                step["scores"][i, :k], step["correction"][i, :k + 1],
-                gold[i, :k], counts,
-            ))
+            per_row.append(
+                gold_set_nll(
+                    step["scores"][i, :k],
+                    step["correction"][i, : k + 1],
+                    gold[i, :k],
+                    counts,
+                )
+            )
         losses.append(torch.stack(per_row))
     selected = losses if step_supervision == "all" else losses[-1:]
     objective = torch.stack(selected).mean()
     if monotonic_weight > 0 and len(losses) > 1:
         regressions = [
-            torch.relu(losses[i + 1] - losses[i]).mean()
-            for i in range(len(losses) - 1)
+            torch.relu(losses[i + 1] - losses[i]).mean() for i in range(len(losses) - 1)
         ]
         objective = objective + monotonic_weight * torch.stack(regressions).mean()
     return objective
