@@ -90,6 +90,8 @@ def read_episodes(path: Path):
             ids_for_step = step.get("option_ids")
             if not isinstance(ids_for_step, list) or len(ids_for_step) != k:
                 raise ValueError("option_ids must align to logits")
+            if any(not isinstance(v, str) or not v for v in ids_for_step):
+                raise ValueError("option IDs must be nonempty strings")
             if len(set(ids_for_step)) != k:
                 raise ValueError("duplicate option IDs")
             if option_features is not None and (
@@ -109,6 +111,15 @@ def read_episodes(path: Path):
             if any(not bool(torch.isfinite(z).all()) for z in tensors):
                 raise ValueError("nonfinite cached feature")
             max_options = max(max_options, k)
+        # If a menu changes anywhere, all actions must have semantic
+        # embeddings; otherwise early transitions would still encode A/B
+        # position rather than the changing action's meaning.
+        variable_menu = any(
+            step["option_ids"] != steps[0]["option_ids"]
+            for step in steps[1:]
+        )
+        if variable_menu and any(step.get("option_features") is None for step in steps):
+            raise ValueError("changing menus require semantic features for ALL steps")
     return data, ids, dim, max_options
 
 
@@ -214,7 +225,11 @@ def train(args):
         train_nll = 0.0
         for index, key in enumerate(order):
             result = replay_episode(agent, train_data["episodes"][key], device)
-            (result["loss"] / args.accumulate_episodes).backward()
+            # An incomplete final accumulation group must not receive
+            # less weight than a full group of episodes.
+            group_start = (index // args.accumulate_episodes) * args.accumulate_episodes
+            group_size = min(args.accumulate_episodes, len(order) - group_start)
+            (result["loss"] / group_size).backward()
             train_nll += float(result["loss"].detach())
             if (index + 1) % args.accumulate_episodes == 0 or index + 1 == len(order):
                 torch.nn.utils.clip_grad_norm_(
