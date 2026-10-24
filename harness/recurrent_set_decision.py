@@ -338,33 +338,60 @@ def loss_over_steps(
     *,
     step_supervision: str = "all",
     monotonic_weight: float = 0.0,
+    revision_previous: Optional[Tensor] = None,
+    revision_weight: float = 0.0,
+    unchanged_weight: float = 0.0,
 ) -> Tensor:
-    """All-step / final-step exact-set NLL with an optional anti-regression loss."""
+    """Exact-set NLL plus optional change-weighted revision auxiliary.
+
+    revision_previous is the prior predicted/action set for the SAME problem or
+    the immediately preceding environment state, not the oracle gold answer.
+    The revision auxiliary supervises only r>=1, because r=0 is the frozen
+    native readout. The exact-set NLL always remains in the objective.
+    """
     if step_supervision not in ("all", "last"):
         raise ValueError("step_supervision must be all or last")
-    if monotonic_weight < 0:
-        raise ValueError("monotonic_weight must be nonnegative")
-    if len(allowed) != gold.shape[0] or mask.shape != gold.shape:
-        raise ValueError("gold/mask/allowed mismatch")
-    losses = []
-    for step in history:
-        per_row = []
+    if not history or gold.ndim != 2 or len(allowed) != gold.shape[0] or mask.shape != gold.shape:
+        raise ValueError("history/gold/mask/allowed mismatch")
+    if not math.isfinite(monotonic_weight) or monotonic_weight < 0:
+        raise ValueError("monotonic_weight must be finite and nonnegative")
+    if not math.isfinite(revision_weight) or revision_weight < 0:
+        raise ValueError("revision_weight must be finite and nonnegative")
+    if revision_weight:
+        if len(history) < 2 or revision_previous is None or revision_previous.shape != gold.shape:
+            raise ValueError("revision training requires steps>=1 and previous sets matching gold")
+    losses, auxiliary = [], []
+    for step_index, step in enumerate(history):
+        per_row, changes = [], []
         for i, counts in enumerate(allowed):
             k = int(mask[i].sum().item())
+            scores = step["scores"][i, :k]
             per_row.append(
                 gold_set_nll(
-                    step["scores"][i, :k],
-                    step["correction"][i, : k + 1],
-                    gold[i, :k],
-                    counts,
+                    scores, step["correction"][i, : k + 1], gold[i, :k], counts
                 )
             )
+            if revision_weight and step_index > 0:
+                changes.append(
+                    revision_auxiliary_bce(
+                        scores,
+                        revision_previous[i, :k],
+                        gold[i, :k],
+                        unchanged_weight=unchanged_weight,
+                    )
+                )
         losses.append(torch.stack(per_row))
+        if changes:
+            auxiliary.append(torch.stack(changes).mean())
     selected = losses if step_supervision == "all" else losses[-1:]
     objective = torch.stack(selected).mean()
+    if auxiliary:
+        used = auxiliary if step_supervision == "all" else auxiliary[-1:]
+        objective = objective + revision_weight * torch.stack(used).mean()
     if monotonic_weight > 0 and len(losses) > 1:
         regressions = [
-            torch.relu(losses[i + 1] - losses[i]).mean() for i in range(len(losses) - 1)
+            torch.relu(losses[i + 1] - losses[i]).mean()
+            for i in range(len(losses) - 1)
         ]
         objective = objective + monotonic_weight * torch.stack(regressions).mean()
     return objective
