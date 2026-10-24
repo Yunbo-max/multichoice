@@ -275,6 +275,10 @@ def load_model_checkpoint(path: Path, device: torch.device):
 
 
 def train_command(args) -> None:
+    if args.steps < 1 or args.epochs < 1 or args.batch_size < 1:
+        raise ValueError("head training requires positive steps, epochs, and batch size")
+    if not math.isfinite(args.lr) or args.lr <= 0 or args.grad_clip <= 0:
+        raise ValueError("learning rate and gradient clipping must be positive")
     train_cache, dev_cache = read_caches(args.train_cache, args.dev_cache)
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA unavailable")
