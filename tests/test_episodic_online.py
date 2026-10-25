@@ -89,6 +89,29 @@ class OnlineExecutionTests(unittest.TestCase):
         run_episode(gen, enc2, self.make_agent(), later, mode="carry")
         self.assertEqual(enc1.prompt_rows[0], enc2.prompt_rows[0])
 
+    def test_no_switch_counterfactual_preserves_initial_rule_and_action_execution(self):
+        ep = gen_episode(random.Random(23), horizon=5, rule_switch_prob=1.0)
+        agent = self.make_agent()
+        recorded = run_episode(
+            gen, FakeEncoder(), agent, ep,
+            mode="carry", rule_schedule="recorded",
+        )
+        frozen = run_episode(
+            gen, FakeEncoder(), agent, ep,
+            mode="carry", rule_schedule="initial_only",
+        )
+        self.assertEqual(recorded["n_steps"], frozen["n_steps"])
+        self.assertEqual(recorded["executed_actions"], frozen["executed_actions"])
+        self.assertTrue(any("The rule changed." in txt
+                            for txt in recorded["observed_feedback"]))
+        self.assertFalse(any("The rule changed." in txt
+                             for txt in frozen["observed_feedback"]))
+        with self.assertRaises(ValueError):
+            run_episode(
+                gen, FakeEncoder(), agent, ep,
+                mode="carry", rule_schedule="impossible",
+            )
+
     def test_first_step_same_with_and_without_carry(self):
         ep = gen_episode(random.Random(5), horizon=4, rule_switch_prob=0.7)
         agent = self.make_agent()
