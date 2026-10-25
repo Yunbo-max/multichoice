@@ -114,6 +114,23 @@ class FiveCellIdentifiability(unittest.TestCase):
             for key in ("gold", "oracle_rule_before_decision", "post_observation"):
                 self.assertNotIn(key, row)
 
+    def test_corrupted_rule_feedback_and_gold_are_rejected_before_encoding(self):
+        import copy
+        episode = gen_episode(random.Random(31), 4, 1.0)
+
+        class NeverCalledEncoder:
+            def __getattr__(self, name):
+                raise AssertionError("Qwen must not run on corrupted episode")
+
+        corrupt = copy.deepcopy(episode)
+        corrupt["steps"][0]["post_observation"] = "The rule changed yesterday."
+        with self.assertRaises(ValueError):
+            encode_episode(corrupt, NeverCalledEncoder())
+        corrupt = copy.deepcopy(episode)
+        corrupt["steps"][1]["gold"] = corrupt["steps"][0]["gold"]
+        with self.assertRaises(ValueError):
+            encode_episode(corrupt, NeverCalledEncoder())
+
     def test_old_reset_trajectory_297_is_old_symmetric_cohort_fraction(self):
         # Replicate old FOUR-cell generator's exact random call order.
         # 256 held-out episodes, seed 9043, horizon 8, switch p 0.25.
