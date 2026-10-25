@@ -1,5 +1,7 @@
 # Multi-answer decision model (multichoice)
 
+> **Identifiability fix (2026-10-25):** [root-cause audit and five-cell, exactly-two-action protocol](docs/episodic_identifiability_audit_2026-10-25.md). Prior 4-cell on-policy results contain a symmetric-state shortcut (76/256 opposite-pair episodes); rerun isolated v3 before drawing any memory conclusion.
+
 > **2026-10-25 Episodic debugging:** [causal-rule and on-policy audit](docs/episodic_debug_audit_2026-10-25.md). This branch fixes rule-switch timing, caches repeated frozen-Qwen prompts and adds real action-dependent text simulation. New GPU experiments are not yet verified.
 
 > **New episodic latent-memory implementation:** [BDH-CQ-inspired cross-environment set decisions](docs/episodic_set_memory_bdh_cq.md) — persistent Memory S across actions, fresh Workspace H for each prompt, causal feedback updates, Qwen feature-cache episodic trainer, and on-policy synthetic rule-switch benchmark. This is not a reproduction of proprietary BDH-CQ.
