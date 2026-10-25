@@ -12,14 +12,14 @@ from pathlib import Path
 import torch
 
 try:
-    from gen_text_episodes import CELLS, rotate, state_text, active_text, demo_text
+    from gen_text_episodes import CELLS, rotate, state_text, active_text, demo_text, validate_episode
     from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from recurrent_set_decision import set_map, gold_set_nll
     from train_episodic_features import CKPT_SCHEMA
     from set_distillation import allowed_counts
 except ModuleNotFoundError:
-    from harness.gen_text_episodes import CELLS, rotate, state_text, active_text, demo_text
+    from harness.gen_text_episodes import CELLS, rotate, state_text, active_text, demo_text, validate_episode
     from harness.episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from harness.episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from harness.recurrent_set_decision import set_map, gold_set_nll
@@ -171,6 +171,8 @@ def main():
     if not episodes:
         raise ValueError("empty eval set")
     episodes = episodes[:args.limit] if args.limit else episodes
+    for episode in episodes:
+        validate_episode(episode)  # fail before allocating 4B Qwen weights
     saved = torch.load(args.head, map_location="cpu", weights_only=True)
     if saved.get("schema") != CKPT_SCHEMA:
         raise ValueError("unsupported episodic checkpoint")
