@@ -29,8 +29,23 @@ def allowed_counts(row):
     if mode == "single":
         if empty:
             raise ValueError("single-choice protocol cannot allow an empty answer")
-        return [1]
-    return list(range(0 if empty else 1, k + 1))
+        baseline = [1]
+    else:
+        baseline = list(range(0 if empty else 1, k + 1))
+    # Optional PUBLIC cardinality constraint. Default behavior is unchanged,
+    # preserving the earlier gold-BCE and SetJev training protocols.
+    declared = row.get("allowed_cardinalities")
+    if declared is None:
+        return baseline
+    if (
+        not isinstance(declared, list)
+        or not declared
+        or any(type(m) is not int for m in declared)
+        or declared != sorted(set(declared))
+        or any(m not in baseline for m in declared)
+    ):
+        raise ValueError("allowed_cardinalities must be sorted unique public counts")
+    return declared
 
 
 def input_digest(row):
@@ -40,6 +55,8 @@ def input_digest(row):
         selection_mode=row.get("selection_mode", "multi"),
         allow_empty=row.get("allow_empty", False),
     )
+    if "allowed_cardinalities" in row:
+        payload["allowed_cardinalities"] = allowed_counts(row)
     return hashlib.sha256(
         json.dumps(
             payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
