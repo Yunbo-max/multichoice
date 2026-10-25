@@ -64,31 +64,21 @@ def _predict(readout, gen, active, scores, correction, support, shift_logits, ta
         idx = set_map(scores, correction, support)["indices"]
         return [int(i in idx) for i in range(k)]
     if readout == "structured":
-        return structured_predict(active, scores, tau=tau)["set"]
+        return structured_predict(active, scores.float().cpu().tolist(), tau=tau)["set"]
     if readout == "shift_head":
         return shift_head_predict(active, shift_logits, tau=tau)["set"]
     raise ValueError(f"unknown readout {readout}")
 
 
 def _step_nll(
-    readout,
-    active,
-    scores,
-    correction,
-    support,
-    rule,
-    shift_logits,
-    tau,
-    gold_tensor,
-    device,
+    readout, active, scores, correction, support, rule, shift_logits, tau, gold_tensor
 ):
-    k = len(scores)
     if readout == "raw":
         return float(
             gold_set_nll(scores, correction, gold_tensor, support, normalize=False)
         )
     if readout == "structured":
-        return structured_nll(active, scores, rule, tau=tau)
+        return structured_nll(active, scores.float().cpu().tolist(), rule, tau=tau)
     probs = shift_head_predict(active, shift_logits, tau=tau)["probs"]
     return -math.log(max(probs[rule], 1e-300))
 
@@ -126,14 +116,13 @@ def run_readout(gen, encoder, agent, episode, tau, readout):
         nll += _step_nll(
             readout,
             active,
-            scores.float().cpu().tolist(),
+            scores,
             correction,
             support,
             rule,
             shift_logits,
             tau,
             gold_tensor,
-            encoder.device,
         )
 
         correct = pred == gold
