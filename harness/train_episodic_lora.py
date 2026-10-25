@@ -54,10 +54,24 @@ class TrainableQwenEncoder:
             self.tokenizer.encode(s, add_special_tokens=False)[0] for s in self.labels
         ]
         cfg = AutoConfig.from_pretrained(checkpoint, local_files_only=True)
+        if getattr(cfg, "mamba_ssm_dtype", None) == "float32":
+            cfg.mamba_ssm_dtype = "bfloat16"
         cls = (
             Qwen3_5ForConditionalGeneration
             if cfg.model_type == "qwen3_5"
             else Qwen3_5ForCausalLM
+        )
+        resolved = {
+            "bf16": torch.bfloat16,
+            "fp16": torch.float16,
+            "fp32": torch.float32,
+        }[dtype]
+        self.model = cls.from_pretrained(
+            checkpoint,
+            config=cfg,
+            dtype=resolved,
+            attn_implementation="sdpa",
+            local_files_only=True,
         )
         resolved = {
             "bf16": torch.bfloat16,
@@ -95,19 +109,12 @@ class TrainableQwenEncoder:
             prompts, padding=True, add_special_tokens=False, return_tensors="pt"
         )
         encoded = {k: v.to(self.device) for k, v in encoded.items()}
-
-        def _fwd(ids, mask):
-            out = self.backbone(
-                input_ids=ids, attention_mask=mask, use_cache=False, return_dict=True
-            )
-            return out.last_hidden_state
-
-        # Explicit gradient checkpointing of the Qwen forward: only the slot
-        # vector is retained, the per-layer activations are recomputed on the
-        # backward pass, keeping the on-policy LoRA graph within GPU memory.
-        hidden = torch.utils.checkpoint.checkpoint(
-            _fwd, encoded["input_ids"], encoded["attention_mask"], use_reentrant=False
-        )
+        hidden = self.backbone(
+            input_ids=encoded["input_ids"],
+            attention_mask=encoded["attention_mask"],
+            use_cache=False,
+            return_dict=True,
+        ).last_hidden_state
         index = encoded["attention_mask"].sum(-1) - 1
         return hidden[torch.arange(len(prompts), device=self.device), index].float()
 
