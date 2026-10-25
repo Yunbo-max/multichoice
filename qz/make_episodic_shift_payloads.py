@@ -108,7 +108,7 @@ def train_job(seed):
         + f'"$V/bin/python" harness/train_episodic_features.py '
         + f'--train-cache "{DATA}/train.pt" --dev-cache "{DATA}/dev.pt" '
         + f'--output "{out}" --device cuda --seed {seed} '
-        + f"--epochs 5 --inner-steps 4 --latent-dim 128 "
+        + f"--epochs 5 --inner-steps 4 --latent-dim 128 --rule-weight 1.0 "
         + f'> "{R}/logs/qz/episodic_shift_train_s{seed}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )

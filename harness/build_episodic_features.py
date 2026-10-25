@@ -137,6 +137,7 @@ def encode_episode(source: dict, encoder) -> dict:
                 "post_observation": observed,
                 "allowed": support,
                 "done": event["done"],
+                "rule": event.get("oracle_rule_before_decision"),
             }
         )
     return {

@@ -14,6 +14,7 @@ is a readout problem (mass wasted on the 15 impossible sets) or a memory problem
 from __future__ import annotations
 import argparse
 import json
+import math
 from pathlib import Path
 import torch
 
@@ -24,7 +25,12 @@ try:
         _valid_rule,
         initial_state,
     )
-    from structured_readout import baselines, structured_nll, structured_predict
+    from structured_readout import (
+        baselines,
+        shift_head_predict,
+        structured_nll,
+        structured_predict,
+    )
     from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from recurrent_set_decision import set_map, gold_set_nll
@@ -56,8 +62,10 @@ def run_episode(gen, encoder, agent, episode: dict, tau: float) -> dict:
 
     raw_first = raw_later = 0
     struct_first = struct_later = 0
-    raw_traj = struct_traj = True
+    shift_first = shift_later = 0
+    raw_traj = struct_traj = shift_traj = True
     raw_nll = struct_nll_sum = 0.0
+    shift_nll_sum = 0.0
     k = len(gen.CELLS)
 
     for t, oracle in enumerate(states):
@@ -80,18 +88,27 @@ def run_episode(gen, encoder, agent, episode: dict, tau: float) -> dict:
         raw_pred = [int(i in raw_idx) for i in range(k)]
         raw_correct = raw_pred == gold
 
-        # structured readout: softmax over 6 successors
+        # structured readout: softmax over 6 successors (from option scores)
         struct = structured_predict(active, scores, tau=tau)
         struct_correct = struct["set"] == gold
+
+        # shift-head readout: softmax over 6 shifts (from the memory-conditioned head)
+        shift_logits = final["shift_logits"][0].float().cpu().tolist()
+        shift_pred = shift_head_predict(active, shift_logits, tau=tau)
+        shift_correct = shift_pred["set"] == gold
+        shift_nll_step = -math.log(max(shift_pred["probs"][rule], 1e-300))
 
         if t == 0:
             raw_first += int(raw_correct)
             struct_first += int(struct_correct)
+            shift_first += int(shift_correct)
         else:
             raw_later += int(raw_correct)
             struct_later += int(struct_correct)
+            shift_later += int(shift_correct)
         raw_traj = raw_traj and raw_correct
         struct_traj = struct_traj and struct_correct
+        shift_traj = shift_traj and shift_correct
 
         raw_nll += float(
             gold_set_nll(
@@ -103,6 +120,7 @@ def run_episode(gen, encoder, agent, episode: dict, tau: float) -> dict:
             )
         )
         struct_nll_sum += structured_nll(active, scores, rule, tau=tau)
+        shift_nll_sum += shift_nll_step
 
         # advance the environment with the model's ACTUAL (raw) selected action
         executed = raw_pred
@@ -143,6 +161,10 @@ def run_episode(gen, encoder, agent, episode: dict, tau: float) -> dict:
         "struct_later": struct_later,
         "struct_traj": int(struct_traj),
         "struct_nll": struct_nll_sum,
+        "shift_first": shift_first,
+        "shift_later": shift_later,
+        "shift_traj": int(shift_traj),
+        "shift_nll": shift_nll_sum,
     }
 
 
@@ -156,15 +178,19 @@ def evaluate(gen, encoder, agent, episodes, tau):
             "struct_first",
             "struct_later",
             "struct_traj",
+            "shift_first",
+            "shift_later",
+            "shift_traj",
         )
     }
-    raw_nll = struct_nll = total = 0.0
+    raw_nll = struct_nll = shift_nll = total = 0.0
     for episode in episodes:
         out = run_episode(gen, encoder, agent, episode, tau)
         for key in r:
             r[key] += out[key]
         raw_nll += out["raw_nll"]
         struct_nll += out["struct_nll"]
+        shift_nll += out["shift_nll"]
         total += out["n_steps"]
     n = len(episodes)
     later_count = total - n
@@ -182,6 +208,12 @@ def evaluate(gen, encoder, agent, episodes, tau):
             "later_em": r["struct_later"] / later_count if later_count else None,
             "trajectory_em": r["struct_traj"] / n,
             "shift_nll": struct_nll / total,
+        },
+        "shift_head": {
+            "step_em": (r["shift_first"] + r["shift_later"]) / total,
+            "later_em": r["shift_later"] / later_count if later_count else None,
+            "trajectory_em": r["shift_traj"] / n,
+            "shift_nll": shift_nll / total,
         },
     }
 

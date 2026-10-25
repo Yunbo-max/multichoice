@@ -84,3 +84,23 @@ def baselines(n_cells: int) -> dict:
         "uniform_shift_nll": math.log(n_shift),
         "uniform_subsets_nll": math.log(math.comb(n_cells, 2)),
     }
+
+
+def shift_head_predict(
+    state: Sequence[int], shift_logits: Sequence[float], tau: float = 1.0
+) -> dict:
+    """P(k) = softmax(shift_logits/tau) over shifts 1..K-1; predict successor set.
+
+    ``shift_logits`` is the memory-conditioned shift-head output (K-1 entries).
+    """
+    n = len(state)
+    if len(shift_logits) != n - 1:
+        raise ValueError("shift_logits must have K-1 entries")
+    if tau <= 0:
+        raise ValueError("tau must be positive")
+    peak = max(shift_logits)
+    probs = {k: math.exp(shift_logits[k - 1] / tau - peak / tau) for k in range(1, n)}
+    total = sum(probs.values())
+    probs = {k: v / total for k, v in probs.items()}
+    k_best = max(probs, key=lambda k: probs[k])
+    return {"shift": k_best, "set": shift(state, k_best), "probs": probs}
