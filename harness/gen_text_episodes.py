@@ -21,7 +21,9 @@ import json
 import random
 from pathlib import Path
 
-CELLS = ["Alpha", "Beta", "Gamma", "Delta"]
+# Five positions eliminate left/right ambiguity for every proper nonempty set.
+CELLS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]
+ACTIVE_COUNT = 2
 
 
 def rotate(active, direction):
@@ -42,10 +44,12 @@ def demo_text(direction):
     n = len(CELLS)
     inp = [int(i == 0) for i in range(n)]
     out = rotate(inp, direction)
-    direction_name = "right" if direction > 0 else "left"
+    # Do not leak the symbolic answer "left" or "right". Only show a
+    # visible input/output demonstration from which the transformation may
+    # be inferred; the next decision must remember this observation.
     return (
-        f"Rule example: when only {CELLS[0]} is active, the active set becomes "
-        f"{active_text(out)} (a cyclic {direction_name} shift)."
+        f"Known cyclic-rule example: if only {CELLS[0]} is active, "
+        f"the next active component is {active_text(out)}."
     )
 
 
@@ -68,7 +72,7 @@ def gen_episode(rng, horizon, rule_switch_prob):
     direction = rng.choice((-1, 1))
     demos = [demo_text(direction)]
     active = [0] * len(CELLS)
-    for i in rng.sample(range(len(CELLS)), 2):
+    for i in rng.sample(range(len(CELLS)), ACTIVE_COUNT):
         active[i] = 1
     steps = []
     for t in range(horizon):
@@ -95,6 +99,7 @@ def gen_episode(rng, horizon, rule_switch_prob):
                     "options": option_block(),
                     "selection_mode": "multi",
                     "allow_empty": False,
+                    "allowed_cardinalities": [ACTIVE_COUNT],
                 },
                 "action_ids": option_ids(),
                 "gold": gold,
@@ -126,6 +131,8 @@ def validate_episode(episode):
             raise ValueError("missing private pre-decision rule audit field")
         if step.get("step_index") != t:
             raise ValueError("step_index must equal chronological position")
+        if step.get("decision", {}).get("allowed_cardinalities") != [ACTIVE_COUNT]:
+            raise ValueError("environment must publicly enforce fixed count")
         ids = step.get("action_ids")
         if not isinstance(ids, list) or len(ids) != k or len(set(ids)) != k:
             raise ValueError("action_ids must be K distinct strings")
@@ -137,10 +144,18 @@ def validate_episode(episode):
                 and all(type(x) is int and x in (0, 1) for x in value)
             ):
                 raise ValueError(f"{field} must be K-length multi-hot")
-            if sum(value) not in range(1, k + 1):
-                raise ValueError(f"{field} must be a nonempty selection")
+            if sum(value) != ACTIVE_COUNT:
+                raise ValueError(f"{field} must select exactly {ACTIVE_COUNT} actions")
         if step.get("done") is not (t == len(sequence) - 1):
             raise ValueError("done must be true only for the final step")
+    # Every generated state must distinguish left from right. A symmetric
+    # state would make a no-memory policy look artificially successful.
+    if len(CELLS) % 2 == 0:
+        raise ValueError("cyclic-rule benchmark requires odd ring width")
+    for step in sequence:
+        bits = [int(cell in step["decision"]["state"]) for cell in CELLS]
+        if rotate(bits, +1) == rotate(bits, -1):
+            raise ValueError("ambiguous state: both hidden rules imply same answer")
     return True
 
 
