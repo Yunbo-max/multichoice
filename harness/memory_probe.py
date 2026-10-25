@@ -63,33 +63,63 @@ def fit_probe_split(
     lr: float = 0.05,
     seed: int = 0,
     test_fraction: float = 0.2,
+    groups: Sequence[str] | None = None,
+    return_indices: bool = False,
 ):
-    """Fit on a train split and report train + held-out test accuracy.
+    """Fit a probe without reusing the same episode on both sides.
 
-    Returns ``(model, train_accuracy, test_accuracy)``. The split is deterministic
-    given ``seed``; the probe is never fit on the held-out memories.
+    If groups are supplied, split entire episodes first; only then train on
+    their time steps. Without groups, the legacy per-example split is kept
+    for generic IID use, but must NOT be used for recurrent memory evaluation.
+
+    The optional fourth return value contains the fixed train/test indices
+    so switch/no-switch diagnostics can evaluate the SAME trained probe
+    rather than fitting separate incomparable classifiers.
     """
-    if len(memories) < 2:
-        raise ValueError("need at least two samples to split")
+    if len(memories) != len(labels) or len(memories) < 2:
+        raise ValueError("memories and labels must align and contain >=2 rows")
     if not 0.0 < test_fraction < 1.0:
         raise ValueError("test_fraction must be in (0,1)")
     g = torch.Generator().manual_seed(seed)
-    perm = torch.randperm(len(memories), generator=g).tolist()
-    n_test = max(1, int(len(memories) * test_fraction))
-    test_idx = perm[:n_test]
-    train_idx = perm[n_test:]
+    if groups is not None:
+        if len(groups) != len(memories) or any(
+            not isinstance(item, str) or not item for item in groups
+        ):
+            raise ValueError("episode group IDs must be aligned nonempty strings")
+        episodes = list(dict.fromkeys(groups))
+        if len(episodes) < 2:
+            raise ValueError("need at least two distinct episodes for held-out probe")
+        perm = torch.randperm(len(episodes), generator=g).tolist()
+        n_test_groups = min(len(episodes) - 1, max(1, int(len(episodes) * test_fraction)))
+        heldout = {episodes[j] for j in perm[:n_test_groups]}
+        test_idx = [i for i, episode_id in enumerate(groups) if episode_id in heldout]
+        train_idx = [i for i, episode_id in enumerate(groups) if episode_id not in heldout]
+    else:
+        perm = torch.randperm(len(memories), generator=g).tolist()
+        n_test = min(len(memories) - 1, max(1, int(len(memories) * test_fraction)))
+        test_idx = perm[:n_test]
+        train_idx = perm[n_test:]
+
     model, train_acc = fit_probe(
         [memories[i] for i in train_idx],
         [labels[i] for i in train_idx],
         n_classes,
-        steps=steps,
-        lr=lr,
-        seed=seed,
+        steps=steps, lr=lr, seed=seed,
     )
     preds = probe_predictions(model, [memories[i] for i in test_idx])
-    test_labels = [labels[i] for i in test_idx]
-    test_acc = sum(int(p == y) for p, y in zip(preds, test_labels)) / len(test_labels)
-    return model, train_acc, test_acc
+    test_acc = sum(
+        int(p == labels[i]) for p, i in zip(preds, test_idx)
+    ) / len(test_idx)
+    if not return_indices:
+        return model, train_acc, test_acc
+    metadata = {
+        "train_indices": train_idx,
+        "test_indices": test_idx,
+        "train_episodes": len({groups[i] for i in train_idx}) if groups is not None else None,
+        "test_episodes": len({groups[i] for i in test_idx}) if groups is not None else None,
+        "split_unit": "episode" if groups is not None else "individual_step",
+    }
+    return model, train_acc, test_acc, metadata
 
 
 def counterfactual_summary(predicted_sets: dict) -> dict:
