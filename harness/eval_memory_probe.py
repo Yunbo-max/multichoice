@@ -19,7 +19,7 @@ try:
         initial_state,
     )
     from structured_readout import shift
-    from memory_probe import counterfactual_summary, fit_probe_split
+    from memory_probe import counterfactual_summary, fit_probe_split, probe_predictions
     from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from recurrent_set_decision import set_map
@@ -33,7 +33,7 @@ except ModuleNotFoundError:
         initial_state,
     )
     from harness.structured_readout import shift
-    from harness.memory_probe import fit_probe, counterfactual_summary
+    from harness.memory_probe import fit_probe_split, counterfactual_summary, probe_predictions
     from harness.episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from harness.episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from harness.recurrent_set_decision import set_map
@@ -43,8 +43,11 @@ except ModuleNotFoundError:
 
 @torch.no_grad()
 def collect_probe(gen, encoder, agent, episodes):
-    memories, labels, switched = [], [], []
+    memories, labels, switched, episode_ids = [], [], [], []
     for episode in episodes:
+        episode_id = episode.get("episode_id")
+        if not isinstance(episode_id, str) or not episode_id:
+            raise ValueError("all probe episodes must have stable nonempty IDs")
         active = initial_state(gen, episode)
         memory = agent.empty_memory(1, device=encoder.device)
         demos = encoder.encode_demonstrations(episode.get("demonstrations", []))
@@ -57,6 +60,7 @@ def collect_probe(gen, encoder, agent, episodes):
                 raise ValueError("invalid rule timeline")
             memories.append(memory.detach().cpu())
             labels.append(int(rule))
+            episode_ids.append(episode_id)
             switched.append(prev_rule is not None and rule != prev_rule)
             prev_rule = rule
             row = dict(oracle["decision"])
@@ -97,7 +101,7 @@ def collect_probe(gen, encoder, agent, episodes):
                 done=torch.tensor([False], dtype=torch.bool, device=encoder.device),
             )
             active = executed
-    return memories, labels, switched
+    return memories, labels, switched, episode_ids
 
 
 @torch.no_grad()
@@ -159,18 +163,21 @@ def main():
     agent = EpisodicSetDecision(config).to(encoder.device).eval()
     agent.load_state_dict(saved["model"], strict=True)
 
-    memories, labels, switched = collect_probe(gen, encoder, agent, episodes)
+    memories, labels, switched, episode_ids = collect_probe(gen, encoder, agent, episodes)
     n_classes = len(gen.CELLS) - 1
-    probe, train_acc, test_acc = fit_probe_split(memories, labels, n_classes=n_classes)
+    probe, train_acc, test_acc, split = fit_probe_split(
+        memories, labels, n_classes=n_classes, groups=episode_ids,
+        return_indices=True,
+    )
 
     def _split_acc(flags):
-        idx = [i for i, f in enumerate(flags) if f]
+        # Condition-specific diagnostics on ONE fixed probe and the SAME
+        # episode-held-out rows. Never retrain on a switch subgroup.
+        idx = [i for i in split["test_indices"] if flags[i]]
         if not idx:
             return None
-        _, _, acc = fit_probe_split(
-            [memories[i] for i in idx], [labels[i] for i in idx], n_classes=n_classes
-        )
-        return acc
+        predicted = probe_predictions(probe, [memories[i] for i in idx])
+        return sum(int(p == labels[i]) for p, i in zip(predicted, idx)) / len(idx)
 
     chance = 1.0 / n_classes
 
@@ -185,12 +192,18 @@ def main():
         "schema": schema,
         "probe": {
             "n_samples": len(memories),
+            "split_unit": split["split_unit"],
+            "train_episodes": split["train_episodes"],
+            "test_episodes": split["test_episodes"],
+            "train_steps": len(split["train_indices"]),
+            "test_steps": len(split["test_indices"]),
             "train_accuracy": train_acc,
             "test_accuracy": test_acc,
             "chance": chance,
             "stored_rule": test_acc > chance + 0.05,
             "after_switch_test_accuracy": _split_acc(switched),
             "no_switch_test_accuracy": _split_acc([not f for f in switched]),
+            "note": "post-switch and no-switch accuracy use the SAME probe trained on disjoint episodes",
         },
         "counterfactual": {
             "state": gen.state_text(state),
