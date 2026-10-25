@@ -7,6 +7,8 @@ Designed to fail if anyone changes the synthetic memory benchmark back to a
 ring with ambiguous states or a decoder capable of choosing every option.
 """
 import itertools
+import json
+from pathlib import Path
 import random
 import unittest
 
@@ -147,6 +149,25 @@ class FiveCellIdentifiability(unittest.TestCase):
         corrupt["steps"][1]["gold"] = corrupt["steps"][0]["gold"]
         with self.assertRaises(ValueError):
             encode_episode(corrupt, NeverCalledEncoder())
+
+    def test_staged_cloud_configs_use_fresh_versioned_artifacts(self):
+        root = Path(__file__).resolve().parents[1] / "qz_episodic"
+        paths = ["episodic-cache-bce-s44.json"]
+        paths += [f"episodic-train-s{s}.json" for s in (43, 44, 45)]
+        paths += [f"episodic-online-s{s}.json" for s in (43, 44, 45)]
+        seen_names = set()
+        for filename in paths:
+            job = json.loads((root / filename).read_text())
+            self.assertIn("-v3-", job["name"])
+            self.assertNotIn(job["name"], seen_names)
+            seen_names.add(job["name"])
+            self.assertIn("episodic_data_identifiable_v3", job["command"])
+            self.assertNotIn("episodic_data_causal_v2", job["command"])
+            self.assertIn("set -euo pipefail", job["command"])
+            self.assertIn("episodic_v3_", job["command"])
+            if "online" in filename:
+                self.assertIn("test.jsonl", job["command"])
+                self.assertNotIn("dev.jsonl", job["command"])
 
     def test_old_reset_trajectory_297_is_old_symmetric_cohort_fraction(self):
         # Replicate old FOUR-cell generator's exact random call order.
