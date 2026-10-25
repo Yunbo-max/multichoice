@@ -37,7 +37,7 @@ def make(seed):
         f'--train-jsonl "{DATA}/train.jsonl" --dev-jsonl "{DATA}/dev.jsonl" '
         f'--qwen-model "$MODEL" --modules "{MODULES}" '
         f'--output "{out}" --lora-r 16 --lora-alpha 32 --inner-steps 4 --latent-dim 128 '
-        f"--epochs 3 --lr 1e-4 --accumulate-episodes 2 --seed {seed} --device cuda "
+        f"--epochs 2 --limit 200 --lr 1e-4 --accumulate-episodes 1 --seed {seed} --device cuda "
         f'> "{R}/logs/qz/episodic_lora_train_s{seed}.log" 2>&1\n'
         'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )

@@ -156,6 +156,9 @@ def replay(gen, encoder, agent, episode):
     demos = encoder.encode_demonstrations(episode.get("demonstrations", []))
     if demos.shape[1]:
         memory = agent.prime(memory, demos)
+    # Option meanings are constant across the whole episode: encode once, reuse
+    # every step (the on-policy loop is otherwise dominated by redundant forwards).
+    option_features = encoder.encode_option_meanings(episode["steps"][0]["decision"])
     losses = []
     k = len(gen.CELLS)
     for t, oracle in enumerate(episode["steps"]):
@@ -187,7 +190,6 @@ def replay(gen, encoder, agent, episode):
             if following != rule:
                 feedback += " The rule changed. " + gen.demo_text(following)
         obs = encoder.encode_observation(feedback)
-        option_features = encoder.encode_option_meanings(row)
         action = torch.tensor(executed, dtype=torch.float32, device=encoder.device)[
             None
         ]
@@ -227,6 +229,7 @@ def main():
     p.add_argument("--inner-steps", type=int, default=4)
     p.add_argument("--latent-dim", type=int, default=128)
     p.add_argument("--epochs", type=int, default=3)
+    p.add_argument("--limit", type=int, default=0, help="0 = all episodes")
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--accumulate-episodes", type=int, default=1)
     p.add_argument("--seed", type=int, default=43)
@@ -239,6 +242,8 @@ def main():
         from harness import gen_text_episodes_shift as gen
 
     train = [json.loads(l) for l in args.train_jsonl.open() if l.strip()]
+    if args.limit:
+        train = train[: args.limit]
     dev = [json.loads(l) for l in args.dev_jsonl.open() if l.strip()]
     for ep in train + dev:
         gen.validate_episode(ep)
