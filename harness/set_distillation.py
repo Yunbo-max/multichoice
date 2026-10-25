@@ -34,9 +34,9 @@ def allowed_counts(row):
         baseline = list(range(0 if empty else 1, k + 1))
     # Optional PUBLIC cardinality constraint. Default behavior is unchanged,
     # preserving the earlier gold-BCE and SetJev training protocols.
-    declared = row.get("allowed_cardinalities")
-    if declared is None:
+    if "allowed_cardinalities" not in row:
         return baseline
+    declared = row["allowed_cardinalities"]
     if (
         not isinstance(declared, list)
         or not declared
