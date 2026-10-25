@@ -4,7 +4,7 @@ import random
 import unittest
 import torch
 
-from harness.gen_text_episodes import gen_episode, active_text
+from harness.gen_text_episodes import gen_episode, active_text, CELLS
 from harness.episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
 from harness.eval_episodic_text_online import initial_state, run_episode
 
@@ -26,8 +26,8 @@ class FakeEncoder:
         # actual selected action, not oracle logged action, drives next state.
         return (
             torch.zeros(1, self.hidden_size),
-            torch.tensor([[10., -10., -10., -10.]]),
-            torch.ones(1, 4, dtype=torch.bool),
+            torch.tensor([[10., 9., -10., -10., -10.]]),
+            torch.ones(1, len(CELLS), dtype=torch.bool),
         )
 
     def encode_observation(self, text):
@@ -35,13 +35,13 @@ class FakeEncoder:
         return torch.zeros(1, self.hidden_size)
 
     def encode_option_meanings(self, row):
-        return torch.zeros(1, 4, self.hidden_size)
+        return torch.zeros(1, len(CELLS), self.hidden_size)
 
 
 class OnlineExecutionTests(unittest.TestCase):
     def make_agent(self):
         return EpisodicSetDecision(EpisodicSetConfig(
-            context_dim=8, latent_dim=16, max_options=4, inner_steps=0,
+            context_dim=8, latent_dim=16, max_options=len(CELLS), inner_steps=0,
             require_semantic_actions=True,
         )).eval()
 
@@ -51,14 +51,14 @@ class OnlineExecutionTests(unittest.TestCase):
         result = run_episode(encoder, self.make_agent(), ep, carry=True)
         self.assertEqual(result["n_steps"], 5)
         self.assertEqual(len(encoder.prompt_rows), 5)
-        self.assertTrue(all(x == [1, 0, 0, 0] for x in result["executed_actions"]))
+        self.assertTrue(all(x == [1, 1, 0, 0, 0] for x in result["executed_actions"]))
         self.assertTrue(all(
-            text.startswith("After this decision the active components are Alpha.")
+            text.startswith("After this decision the active components are Alpha, Beta.")
             for text in result["observed_feedback"]
         ))
         for i in range(1, 5):
             self.assertEqual(encoder.prompt_rows[i]["state"],
-                             "The active components are: Alpha.")
+                             "The active components are: Alpha, Beta.")
         self.assertTrue(any(
             result["observed_feedback"][i] != ep["steps"][i]["post_observation"]
             for i in range(5)
