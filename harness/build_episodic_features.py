@@ -34,6 +34,14 @@ except ModuleNotFoundError:
 
 def encode_episode(source: dict, encoder) -> dict:
     """Pure adapter: can be tested with a fake encoder without loading Qwen."""
+    if source.get("environment_schema") is not None:
+        if source["environment_schema"] != "cyclic5_fixed2_v3":
+            raise ValueError("unknown/legacy synthetic environment protocol")
+        try:
+            from gen_text_episodes import validate_episode
+        except ModuleNotFoundError:
+            from harness.gen_text_episodes import validate_episode
+        validate_episode(source)
     ident = source.get("episode_id")
     if not isinstance(ident, str) or not ident:
         raise ValueError("episode_id must be nonempty")
