@@ -17,12 +17,14 @@ try:
     from episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from recurrent_set_decision import set_map, gold_set_nll
     from train_episodic_features import CKPT_SCHEMA
+    from set_distillation import allowed_counts
 except ModuleNotFoundError:
     from harness.gen_text_episodes import CELLS, rotate, state_text, active_text, demo_text
     from harness.episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from harness.episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from harness.recurrent_set_decision import set_map, gold_set_nll
     from harness.train_episodic_features import CKPT_SCHEMA
+    from harness.set_distillation import allowed_counts
 
 
 def initial_state(episode: dict) -> list[int]:
@@ -66,13 +68,21 @@ def run_episode(encoder, agent, episode: dict, *, carry: bool) -> dict:
         k = len(CELLS)
         if logits.shape != (1, k):
             raise ValueError("generated action width mismatch")
-        support = list(range(1, k + 1))
+        support = allowed_counts(row)
+        if support != [2]:
+            raise ValueError("this benchmark requires exactly two executed actions")
+        if sum(active) != support[0]:
+            raise ValueError("simulator entered invalid state cardinality")
         indices = set_map(
             final["scores"][0, :k],
             final["correction"][0, :k + 1], support,
         )["indices"]
         executed = [int(i in indices) for i in range(k)]
+        if sum(executed) not in support:
+            raise ValueError("predicted action violates publicly allowed set size")
         gold = rotate(active, rule)
+        if rotate(active, 1) == rotate(active, -1):
+            raise ValueError("unidentifiable state: left/right yield identical targets")
         nll += float(gold_set_nll(
             final["scores"][0, :k],
             final["correction"][0, :k + 1],
