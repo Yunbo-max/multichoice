@@ -76,7 +76,7 @@ class FiveCellIdentifiability(unittest.TestCase):
         self.assertNotIn("Select exactly 2", make_body(row, list("ABCDE")))
         self.assertNotEqual(input_digest(constrained), input_digest(row))
         self.assertEqual(allowed_counts({"options": row["options"], "selection_mode": "single"}), [1])
-        for counts in ([0], [2, 2], [3, 2], [True], ["2"], [5, 6]):
+        for counts in ([0], [2, 2], [3, 2], [True], ["2"], [5, 6], None):
             with self.assertRaises(ValueError):
                 allowed_counts(dict(constrained, allowed_cardinalities=counts))
 
