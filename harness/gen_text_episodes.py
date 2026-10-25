@@ -110,6 +110,7 @@ def gen_episode(rng, horizon, rule_switch_prob):
         )
         active = gold
     return {
+        "environment_schema": "cyclic5_fixed2_v3",
         "episode_id": f"ep-{rng.getrandbits(32):08x}",
         "demonstrations": demos,
         "steps": steps,
@@ -117,6 +118,8 @@ def gen_episode(rng, horizon, rule_switch_prob):
 
 
 def validate_episode(episode):
+    if episode.get("environment_schema") != "cyclic5_fixed2_v3":
+        raise ValueError("wrong generator version or legacy symmetric dataset")
     if not isinstance(episode.get("episode_id"), str) or not episode["episode_id"]:
         raise ValueError("episode_id must be nonempty")
     demos = episode.get("demonstrations", [])
