@@ -243,6 +243,8 @@ def main():
             "stored_rule": test_acc > chance + 0.05,
             "after_switch_test_accuracy": _split_acc(switched),
             "no_switch_test_accuracy": _split_acc([not f for f in switched]),
+            "after_switch_test_steps": sum(int(switched[i]) for i in split["test_indices"]),
+            "no_switch_test_steps": sum(int(not switched[i]) for i in split["test_indices"]),
             "note": "post-switch and no-switch accuracy use the SAME probe trained on disjoint episodes",
         },
         "counterfactual": {
