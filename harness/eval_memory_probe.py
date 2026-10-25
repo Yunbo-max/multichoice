@@ -19,7 +19,7 @@ try:
         initial_state,
     )
     from structured_readout import shift
-    from memory_probe import fit_probe, counterfactual_summary
+    from memory_probe import counterfactual_summary, fit_probe_split
     from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from recurrent_set_decision import set_map
@@ -43,19 +43,22 @@ except ModuleNotFoundError:
 
 @torch.no_grad()
 def collect_probe(gen, encoder, agent, episodes):
-    memories, labels = [], []
+    memories, labels, switched = [], [], []
     for episode in episodes:
         active = initial_state(gen, episode)
         memory = agent.empty_memory(1, device=encoder.device)
         demos = encoder.encode_demonstrations(episode.get("demonstrations", []))
         if demos.shape[1]:
             memory = agent.prime(memory, demos)
-        for oracle in episode["steps"]:
+        prev_rule = None
+        for t, oracle in enumerate(episode["steps"]):
             rule = oracle["oracle_rule_before_decision"]
             if not _valid_rule(gen, rule):
                 raise ValueError("invalid rule timeline")
             memories.append(memory.detach().cpu())
             labels.append(int(rule))
+            switched.append(prev_rule is not None and rule != prev_rule)
+            prev_rule = rule
             row = dict(oracle["decision"])
             row["state"] = gen.state_text(active)
             context, logits, mask = encoder.encode_question(row)
@@ -67,11 +70,18 @@ def collect_probe(gen, encoder, agent, episodes):
                 final["scores"][0, :k], final["correction"][0, : k + 1], support
             )["indices"]
             executed = [int(i in idx) for i in range(k)]
+            # Rebuild the causally available feedback, INCLUDING the rule-change
+            # demonstration disclosed after this action (the environment may have
+            # switched the rule here; the memory must be able to ingest it).
             feedback = (
                 "After this decision the active components are "
                 + gen.active_text(executed)
                 + "."
             )
+            if t + 1 < len(episode["steps"]):
+                following = episode["steps"][t + 1].get("oracle_rule_before_decision")
+                if following != rule:
+                    feedback += " The rule changed. " + gen.demo_text(following)
             obs = encoder.encode_observation(feedback)
             option_features = encoder.encode_option_meanings(row)
             action = torch.tensor(executed, dtype=torch.float32, device=encoder.device)[
@@ -87,7 +97,7 @@ def collect_probe(gen, encoder, agent, episodes):
                 done=torch.tensor([False], dtype=torch.bool, device=encoder.device),
             )
             active = executed
-    return memories, labels
+    return memories, labels, switched
 
 
 @torch.no_grad()
@@ -149,13 +159,24 @@ def main():
     agent = EpisodicSetDecision(config).to(encoder.device).eval()
     agent.load_state_dict(saved["model"], strict=True)
 
-    memories, labels = collect_probe(gen, encoder, agent, episodes)
-    probe, train_acc = fit_probe(memories, labels, n_classes=len(gen.CELLS) - 1)
+    memories, labels, switched = collect_probe(gen, encoder, agent, episodes)
+    n_classes = len(gen.CELLS) - 1
+    probe, train_acc, test_acc = fit_probe_split(memories, labels, n_classes=n_classes)
+
+    def _split_acc(flags):
+        idx = [i for i, f in enumerate(flags) if f]
+        if not idx:
+            return None
+        _, _, acc = fit_probe_split(
+            [memories[i] for i in idx], [labels[i] for i in idx], n_classes=n_classes
+        )
+        return acc
+
+    chance = 1.0 / n_classes
 
     state = [0] * len(gen.CELLS)
     state[0] = state[1] = 1
     predicted = counterfactual(gen, encoder, agent, state)
-    # each k should select shift_k(state); count how many are correct
     cf_correct = {k: (predicted[k] == shift(state, k)) for k in predicted}
 
     report = {
@@ -165,8 +186,11 @@ def main():
         "probe": {
             "n_samples": len(memories),
             "train_accuracy": train_acc,
-            "chance": 1.0 / (len(gen.CELLS) - 1),
-            "stored_rule": train_acc > 1.0 / (len(gen.CELLS) - 1) + 0.05,
+            "test_accuracy": test_acc,
+            "chance": chance,
+            "stored_rule": test_acc > chance + 0.05,
+            "after_switch_test_accuracy": _split_acc(switched),
+            "no_switch_test_accuracy": _split_acc([not f for f in switched]),
         },
         "counterfactual": {
             "state": gen.state_text(state),

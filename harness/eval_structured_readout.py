@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""P0: structured set readout on the frozen v4 checkpoints (no retraining).
+"""P0: structured set readout on frozen v4 checkpoints (independent on-policy).
 
-Runs the carry policy, collects per-step option scores, and compares two readouts
-of the SAME scores:
-  raw        set-MAP over all C(7,2)=21 two-subsets (the current decoder)
-  structured softmax over the 6 reachable successors E_k = sum_{i in shift_k(S)} s_i
+Runs THREE separate on-policy rollouts, one per readout, so each readout drives
+its own state distribution:
+  raw         set-MAP over all C(7,2)=21 subsets (current decoder)
+  structured  softmax over the 6 reachable successors E_k = sum_{i in shift_k(S)} s_i
+  shift_head  softmax over the 6 shifts from the memory-conditioned shift head
 
-Also reports the theory baselines: random-legal-shift EM = 1/6, uniform-6 NLL =
-log 6, uniform-21 NLL = log 21. This isolates whether the low on-policy accuracy
-is a readout problem (mass wasted on the 15 impossible sets) or a memory problem.
+Also reports theory baselines (random shift EM 1/6, uniform-6 NLL log 6,
+uniform-21 NLL log 21).
 """
 
 from __future__ import annotations
@@ -43,31 +43,68 @@ except ModuleNotFoundError:
         _valid_rule,
         initial_state,
     )
-    from harness.structured_readout import baselines, structured_nll, structured_predict
+    from harness.structured_readout import (
+        baselines,
+        shift_head_predict,
+        structured_nll,
+        structured_predict,
+    )
     from harness.episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from harness.episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from harness.recurrent_set_decision import set_map, gold_set_nll
     from harness.train_episodic_features import CKPT_SCHEMA
     from harness.set_distillation import allowed_counts
 
+READOUTS = ("raw", "structured", "shift_head")
+
+
+def _predict(readout, gen, active, scores, correction, support, shift_logits, tau):
+    k = len(gen.CELLS)
+    if readout == "raw":
+        idx = set_map(scores, correction, support)["indices"]
+        return [int(i in idx) for i in range(k)]
+    if readout == "structured":
+        return structured_predict(active, scores, tau=tau)["set"]
+    if readout == "shift_head":
+        return shift_head_predict(active, shift_logits, tau=tau)["set"]
+    raise ValueError(f"unknown readout {readout}")
+
+
+def _step_nll(
+    readout,
+    active,
+    scores,
+    correction,
+    support,
+    rule,
+    shift_logits,
+    tau,
+    gold_tensor,
+    device,
+):
+    k = len(scores)
+    if readout == "raw":
+        return float(
+            gold_set_nll(scores, correction, gold_tensor, support, normalize=False)
+        )
+    if readout == "structured":
+        return structured_nll(active, scores, rule, tau=tau)
+    probs = shift_head_predict(active, shift_logits, tau=tau)["probs"]
+    return -math.log(max(probs[rule], 1e-300))
+
 
 @torch.no_grad()
-def run_episode(gen, encoder, agent, episode: dict, tau: float) -> dict:
+def run_readout(gen, encoder, agent, episode, tau, readout):
     states = episode["steps"]
     active = initial_state(gen, episode)
     memory = agent.empty_memory(1, device=encoder.device)
     demos = encoder.encode_demonstrations(episode.get("demonstrations", []))
     if demos.shape[1]:
         memory = agent.prime(memory, demos)
-
-    raw_first = raw_later = 0
-    struct_first = struct_later = 0
-    shift_first = shift_later = 0
-    raw_traj = struct_traj = shift_traj = True
-    raw_nll = struct_nll_sum = 0.0
-    shift_nll_sum = 0.0
+    first = later = 0
+    traj = True
+    nll = 0.0
     k = len(gen.CELLS)
-
     for t, oracle in enumerate(states):
         rule = oracle["oracle_rule_before_decision"]
         if not _valid_rule(gen, rule):
@@ -76,54 +113,38 @@ def run_episode(gen, encoder, agent, episode: dict, tau: float) -> dict:
         row["state"] = gen.state_text(active)
         context, logits, mask = encoder.encode_question(row)
         final = agent.decide(memory, context, logits, mask)[-1]
-        scores = final["scores"][0, :k].float().cpu().tolist()
-        support = allowed_counts(row)
-
-        gold = _apply_rule(gen, active, rule)
-
-        # raw readout: set-MAP over 21 subsets
-        raw_idx = set_map(
-            final["scores"][0, :k], final["correction"][0, : k + 1], support
-        )["indices"]
-        raw_pred = [int(i in raw_idx) for i in range(k)]
-        raw_correct = raw_pred == gold
-
-        # structured readout: softmax over 6 successors (from option scores)
-        struct = structured_predict(active, scores, tau=tau)
-        struct_correct = struct["set"] == gold
-
-        # shift-head readout: softmax over 6 shifts (from the memory-conditioned head)
+        scores = final["scores"][0, :k]
+        correction = final["correction"][0, : k + 1]
         shift_logits = final["shift_logits"][0].float().cpu().tolist()
-        shift_pred = shift_head_predict(active, shift_logits, tau=tau)
-        shift_correct = shift_pred["set"] == gold
-        shift_nll_step = -math.log(max(shift_pred["probs"][rule], 1e-300))
+        support = allowed_counts(row)
+        gold = _apply_rule(gen, active, rule)
+        gold_tensor = torch.tensor(gold, dtype=torch.float32, device=encoder.device)
 
-        if t == 0:
-            raw_first += int(raw_correct)
-            struct_first += int(struct_correct)
-            shift_first += int(shift_correct)
-        else:
-            raw_later += int(raw_correct)
-            struct_later += int(struct_correct)
-            shift_later += int(shift_correct)
-        raw_traj = raw_traj and raw_correct
-        struct_traj = struct_traj and struct_correct
-        shift_traj = shift_traj and shift_correct
-
-        raw_nll += float(
-            gold_set_nll(
-                final["scores"][0, :k],
-                final["correction"][0, : k + 1],
-                torch.tensor(gold, dtype=torch.float32, device=encoder.device),
-                support,
-                normalize=False,
-            )
+        pred = _predict(
+            readout, gen, active, scores, correction, support, shift_logits, tau
         )
-        struct_nll_sum += structured_nll(active, scores, rule, tau=tau)
-        shift_nll_sum += shift_nll_step
+        nll += _step_nll(
+            readout,
+            active,
+            scores.float().cpu().tolist(),
+            correction,
+            support,
+            rule,
+            shift_logits,
+            tau,
+            gold_tensor,
+            encoder.device,
+        )
 
-        # advance the environment with the model's ACTUAL (raw) selected action
-        executed = raw_pred
+        correct = pred == gold
+        if t == 0:
+            first += int(correct)
+        else:
+            later += int(correct)
+        traj = traj and correct
+
+        # advance the environment with THIS readout's own prediction
+        executed = pred
         feedback = (
             "After this decision the active components are "
             + gen.active_text(executed)
@@ -150,72 +171,39 @@ def run_episode(gen, encoder, agent, episode: dict, tau: float) -> dict:
             ),
         )
         active = executed
-
     return {
         "n_steps": len(states),
-        "raw_first": raw_first,
-        "raw_later": raw_later,
-        "raw_traj": int(raw_traj),
-        "raw_nll": raw_nll,
-        "struct_first": struct_first,
-        "struct_later": struct_later,
-        "struct_traj": int(struct_traj),
-        "struct_nll": struct_nll_sum,
-        "shift_first": shift_first,
-        "shift_later": shift_later,
-        "shift_traj": int(shift_traj),
-        "shift_nll": shift_nll_sum,
+        "first": first,
+        "later": later,
+        "traj": int(traj),
+        "nll": nll,
     }
 
 
 def evaluate(gen, encoder, agent, episodes, tau):
-    r = {
-        k: 0
-        for k in (
-            "raw_first",
-            "raw_later",
-            "raw_traj",
-            "struct_first",
-            "struct_later",
-            "struct_traj",
-            "shift_first",
-            "shift_later",
-            "shift_traj",
-        )
+    totals = {
+        m: {"first": 0, "later": 0, "traj": 0, "nll": 0.0, "steps": 0} for m in READOUTS
     }
-    raw_nll = struct_nll = shift_nll = total = 0.0
     for episode in episodes:
-        out = run_episode(gen, encoder, agent, episode, tau)
-        for key in r:
-            r[key] += out[key]
-        raw_nll += out["raw_nll"]
-        struct_nll += out["struct_nll"]
-        shift_nll += out["shift_nll"]
-        total += out["n_steps"]
+        for mode in READOUTS:
+            out = run_readout(gen, encoder, agent, episode, tau, mode)
+            totals[mode]["first"] += out["first"]
+            totals[mode]["later"] += out["later"]
+            totals[mode]["traj"] += out["traj"]
+            totals[mode]["nll"] += out["nll"]
+            totals[mode]["steps"] += out["n_steps"]
     n = len(episodes)
-    later_count = total - n
-    return {
-        "n_episodes": n,
-        "n_decisions": int(total),
-        "raw": {
-            "step_em": (r["raw_first"] + r["raw_later"]) / total,
-            "later_em": r["raw_later"] / later_count if later_count else None,
-            "trajectory_em": r["raw_traj"] / n,
-            "set_nll": raw_nll / total,
-        },
-        "structured": {
-            "step_em": (r["struct_first"] + r["struct_later"]) / total,
-            "later_em": r["struct_later"] / later_count if later_count else None,
-            "trajectory_em": r["struct_traj"] / n,
-            "shift_nll": struct_nll / total,
-        },
-        "shift_head": {
-            "step_em": (r["shift_first"] + r["shift_later"]) / total,
-            "later_em": r["shift_later"] / later_count if later_count else None,
-            "trajectory_em": r["shift_traj"] / n,
-            "shift_nll": shift_nll / total,
-        },
-    }
+    report = {}
+    for mode in READOUTS:
+        t = totals[mode]
+        later_count = t["steps"] - n
+        report[mode] = {
+            "step_em": (t["first"] + t["later"]) / t["steps"],
+            "later_em": t["later"] / later_count if later_count else None,
+            "trajectory_em": t["traj"] / n,
+            "set_nll": t["nll"] / t["steps"],
+        }
+    return {"n_episodes": n, "n_decisions": totals["raw"]["steps"], **report}
 
 
 def main():
@@ -261,7 +249,7 @@ def main():
         "tau": args.tau,
         "baselines": baselines(len(gen.CELLS)),
         "comparison": evaluate(gen, encoder, agent, episodes, args.tau),
-        "note": "raw set-MAP (21 subsets) vs structured softmax over 6 reachable successors",
+        "note": "each readout runs its own on-policy rollout (independent state distribution)",
     }
     print(json.dumps(report, indent=2))
     if args.output is not None:

@@ -54,6 +54,44 @@ def probe_predictions(model: nn.Module, memories: Sequence[Tensor]) -> List[int]
         return (model(x).argmax(dim=-1) + 1).tolist()
 
 
+def fit_probe_split(
+    memories: Sequence[Tensor],
+    labels: Sequence[int],
+    n_classes: int = 6,
+    *,
+    steps: int = 500,
+    lr: float = 0.05,
+    seed: int = 0,
+    test_fraction: float = 0.2,
+):
+    """Fit on a train split and report train + held-out test accuracy.
+
+    Returns ``(model, train_accuracy, test_accuracy)``. The split is deterministic
+    given ``seed``; the probe is never fit on the held-out memories.
+    """
+    if len(memories) < 2:
+        raise ValueError("need at least two samples to split")
+    if not 0.0 < test_fraction < 1.0:
+        raise ValueError("test_fraction must be in (0,1)")
+    g = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(len(memories), generator=g).tolist()
+    n_test = max(1, int(len(memories) * test_fraction))
+    test_idx = perm[:n_test]
+    train_idx = perm[n_test:]
+    model, train_acc = fit_probe(
+        [memories[i] for i in train_idx],
+        [labels[i] for i in train_idx],
+        n_classes,
+        steps=steps,
+        lr=lr,
+        seed=seed,
+    )
+    preds = probe_predictions(model, [memories[i] for i in test_idx])
+    test_labels = [labels[i] for i in test_idx]
+    test_acc = sum(int(p == y) for p, y in zip(preds, test_labels)) / len(test_labels)
+    return model, train_acc, test_acc
+
+
 def counterfactual_summary(predicted_sets: dict) -> dict:
     """Summarise the same-state counterfactual: does the model respond to the demo?
 
