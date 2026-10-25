@@ -82,17 +82,17 @@ def cache_job():
         + f'"$V/bin/python" harness/build_episodic_features.py '
         + f'--input "{DATA}/train.jsonl" --model "$MODEL" '
         + f'--model-identity BCE_S44_FINAL --output "{DATA}/train.pt" --device cuda '
-        + f'> "{R}/logs/qz/episodic_cache_train.log" 2>&1 || '
-        + f'{{ echo "train cache failed"; tail -40 "{R}/logs/qz/episodic_cache_train.log"; exit 3; }}\n'
+        + f'> "{R}/logs/qz/episodic_v3_cache_train.log" 2>&1 || '
+        + f'{{ echo "train cache failed"; tail -40 "{R}/logs/qz/episodic_v3_cache_train.log"; exit 3; }}\n'
         + f'"$V/bin/python" harness/build_episodic_features.py '
         + f'--input "{DATA}/dev.jsonl" --model "$MODEL" '
         + f'--model-identity BCE_S44_FINAL --output "{DATA}/dev.pt" --device cuda '
-        + f'> "{R}/logs/qz/episodic_cache_dev.log" 2>&1 || '
-        + f'{{ echo "dev cache failed"; tail -40 "{R}/logs/qz/episodic_cache_dev.log"; exit 3; }}\n'
+        + f'> "{R}/logs/qz/episodic_v3_cache_dev.log" 2>&1 || '
+        + f'{{ echo "dev cache failed"; tail -40 "{R}/logs/qz/episodic_v3_cache_dev.log"; exit 3; }}\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
     return _base(
-        "episodic-cache-bce-s44",
+        "episodic-cache-v3-bce-s44",
         "Generate textual rule-retention/rule-change episodes and encode frozen-Qwen chronological feature caches (train+dev)",
         command,
         max_running_time_ms="10800000",
@@ -110,11 +110,11 @@ def train_job(seed):
         + f'--train-cache "{DATA}/train.pt" --dev-cache "{DATA}/dev.pt" '
         + f'--output "{out}" --device cuda --seed {seed} '
         + f"--epochs 5 --inner-steps 4 --latent-dim 128 "
-        + f'> "{R}/logs/qz/episodic_train_s{seed}.log" 2>&1\n'
+        + f'> "{R}/logs/qz/episodic_v3_train_s{seed}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
     return _base(
-        f"episodic-train-s{seed}",
+        f"episodic-train-v3-s{seed}",
         "Train persistent-memory head on cached Qwen episodes; carry vs reset eval uses identical weights",
         command,
         max_running_time_ms="3600000",
@@ -135,11 +135,11 @@ def online_eval_job(seed):
         + f'--episodes "{DATA}/test.jsonl" --head "{head}" '
         + f'--qwen-model "$MODEL" --model-identity BCE_S44_FINAL '
         + f'--device cuda --output "{out}" '
-        + f'> "{R}/logs/qz/episodic_online_s{seed}.log" 2>&1\n'
+        + f'> "{R}/logs/qz/episodic_v3_online_s{seed}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
     return _base(
-        f"episodic-online-s{seed}",
+        f"episodic-online-v3-s{seed}",
         "Execute learned set actions in held-out cyclic-rule environment; compare carry vs reset using actual action-dependent observations",
         command,
         max_running_time_ms="7200000",
