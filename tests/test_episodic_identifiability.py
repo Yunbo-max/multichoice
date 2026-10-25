@@ -51,6 +51,23 @@ class FiveCellIdentifiability(unittest.TestCase):
                     rotate(step["executed_set"], -1),
                 )
 
+    def test_old_unrestricted_all_selected_policy_gives_fake_perfect_later_em(self):
+        # Old cardinality protocol allowed 1..K. Executing every action
+        # turns any two-active input into the absorbing all-active state.
+        # The first choice is wrong, but *every later choice* appears right.
+        active = [1, 0, 1, 0]
+        initial_correct, later_correct = 0, 0
+        for t in range(8):
+            true_next = [active[(i - 1) % 4] for i in range(4)]
+            executed = [1, 1, 1, 1]
+            if t == 0:
+                initial_correct += int(executed == true_next)
+            else:
+                later_correct += int(executed == true_next)
+            active = executed
+        self.assertEqual(initial_correct, 0)
+        self.assertEqual(later_correct, 7)
+
     def test_demo_gives_example_not_explicit_direction_name(self):
         self.assertNotEqual(demo_text(-1), demo_text(1))
         for d in (-1, 1):
