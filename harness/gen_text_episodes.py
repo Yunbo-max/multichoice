@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import itertools
 from pathlib import Path
 
 # Five positions eliminate left/right ambiguity for every proper nonempty set.
@@ -155,10 +156,44 @@ def validate_episode(episode):
     # state would make a no-memory policy look artificially successful.
     if len(CELLS) % 2 == 0:
         raise ValueError("cyclic-rule benchmark requires odd ring width")
-    for step in sequence:
-        bits = [int(cell in step["decision"]["state"]) for cell in CELLS]
-        if rotate(bits, +1) == rotate(bits, -1):
+    # Audit exact oracle trajectory and change notification chronology,
+    # not merely that labels are valid 2-hot arrays.
+    if len(demos) != 1:
+        raise ValueError("this synthetic dataset requires one initial demonstration")
+    known_rule = sequence[0]["oracle_rule_before_decision"]
+    if demos[0] != demo_text(known_rule):
+        raise ValueError("initial demonstrated rule does not match oracle")
+    candidates = []
+    for pair in itertools.combinations(range(k), ACTIVE_COUNT):
+        bits = [int(i in pair) for i in range(k)]
+        if state_text(bits) == sequence[0]["decision"]["state"]:
+            candidates.append(bits)
+    if len(candidates) != 1:
+        raise ValueError("invalid initial two-active state")
+    active = candidates[0]
+    for t, step in enumerate(sequence):
+        state = step["decision"]
+        if (state.get("state") != state_text(active)
+            or state.get("selection_mode") != "multi"
+            or state.get("allow_empty") is not False
+            or state.get("options") != option_block()
+            or step.get("action_ids") != option_ids()):
+            raise ValueError("decision state/action protocol diverges from the simulator")
+        direction = step["oracle_rule_before_decision"]
+        if rotate(active, 1) == rotate(active, -1):
             raise ValueError("ambiguous state: both hidden rules imply same answer")
+        expected_gold = rotate(active, direction)
+        if step["gold"] != expected_gold or step["executed_set"] != expected_gold:
+            raise ValueError("oracle action/label disagrees with visible state and rule")
+        feedback = ("After this decision the active components are "
+                    + active_text(step["executed_set"]) + ".")
+        if t < len(sequence) - 1:
+            next_rule = sequence[t + 1]["oracle_rule_before_decision"]
+            if next_rule != direction:
+                feedback += " The rule changed. " + demo_text(next_rule)
+        if step.get("post_observation") != feedback:
+            raise ValueError("post-action feedback leaks or omits a rule change")
+        active = step["executed_set"]
     return True
 
 
