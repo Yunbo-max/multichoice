@@ -82,8 +82,6 @@ class TrainableQwenEncoder:
             ),
         )
         self.model.to(self.device)
-        self.model.gradient_checkpointing_enable()
-        self.model.enable_input_require_grads()
         base = self.model.model if hasattr(self.model, "model") else self.model
         self.backbone = getattr(base.model, "language_model", base.model)
         head = base.get_output_embeddings()
@@ -97,12 +95,19 @@ class TrainableQwenEncoder:
             prompts, padding=True, add_special_tokens=False, return_tensors="pt"
         )
         encoded = {k: v.to(self.device) for k, v in encoded.items()}
-        hidden = self.backbone(
-            input_ids=encoded["input_ids"],
-            attention_mask=encoded["attention_mask"],
-            use_cache=False,
-            return_dict=True,
-        ).last_hidden_state
+
+        def _fwd(ids, mask):
+            out = self.backbone(
+                input_ids=ids, attention_mask=mask, use_cache=False, return_dict=True
+            )
+            return out.last_hidden_state
+
+        # Explicit gradient checkpointing of the Qwen forward: only the slot
+        # vector is retained, the per-layer activations are recomputed on the
+        # backward pass, keeping the on-policy LoRA graph within GPU memory.
+        hidden = torch.utils.checkpoint.checkpoint(
+            _fwd, encoded["input_ids"], encoded["attention_mask"], use_reentrant=False
+        )
         index = encoded["attention_mask"].sum(-1) - 1
         return hidden[torch.arange(len(prompts), device=self.device), index].float()
 
