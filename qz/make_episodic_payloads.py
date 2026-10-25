@@ -151,7 +151,10 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     payloads = [cache_job()] + [train_job(seed) for seed in seeds]\n    payloads += [online_eval_job(seed) for seed in seeds]
     for payload in payloads:
-        path = OUT_DIR / (payload["name"] + ".json")
+        # Preserve stable payload filenames used by documentation, while
+        # keeping submitted QZ job names uniquely tagged for v3.
+        filename = payload["name"].replace("-v3-", "-") + ".json"
+        path = OUT_DIR / filename
         path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
