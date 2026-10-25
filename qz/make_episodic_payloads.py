@@ -24,7 +24,7 @@ OUT_DIR = ROOT / "qz_episodic"
 R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish"
 V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
 MODEL = f"{R}/runs/qz/grouped_bce_4gpu_s44/v1/final"
-DATA = f"{R}/runs/episodic_data_causal_v2"
+DATA = f"{R}/runs/episodic_data_identifiable_v3"
 
 WORKSPACE = "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6"
 PROJECT = "project-160ccb20-98ab-4538-a847-01d1f83d5b0f"
@@ -68,7 +68,7 @@ def cache_job():
     command = (
         _env()
         + f'mkdir -p "{DATA}" "{R}/logs/qz"\ncd "{R}"\n'
-        + 'grep -q "oracle_rule_before_decision" harness/gen_text_episodes.py || '
+        + 'grep -q "cyclic5_fixed2_v3" harness/gen_text_episodes.py || '
         + '{ echo "STALE CODE: causal generator fix missing; abort"; exit 9; }\n'
         + f'"$V/bin/python" harness/gen_text_episodes.py '
         + f'--output "{DATA}/train.jsonl" --episodes 1024 --horizon 6 '
@@ -82,17 +82,17 @@ def cache_job():
         + f'"$V/bin/python" harness/build_episodic_features.py '
         + f'--input "{DATA}/train.jsonl" --model "$MODEL" '
         + f'--model-identity BCE_S44_FINAL --output "{DATA}/train.pt" --device cuda '
-        + f'> "{R}/logs/qz/episodic_cache_train.log" 2>&1 || '
-        + f'{{ echo "train cache failed"; tail -40 "{R}/logs/qz/episodic_cache_train.log"; exit 3; }}\n'
+        + f'> "{R}/logs/qz/episodic_v3_cache_train.log" 2>&1 || '
+        + f'{{ echo "train cache failed"; tail -40 "{R}/logs/qz/episodic_v3_cache_train.log"; exit 3; }}\n'
         + f'"$V/bin/python" harness/build_episodic_features.py '
         + f'--input "{DATA}/dev.jsonl" --model "$MODEL" '
         + f'--model-identity BCE_S44_FINAL --output "{DATA}/dev.pt" --device cuda '
-        + f'> "{R}/logs/qz/episodic_cache_dev.log" 2>&1 || '
-        + f'{{ echo "dev cache failed"; tail -40 "{R}/logs/qz/episodic_cache_dev.log"; exit 3; }}\n'
+        + f'> "{R}/logs/qz/episodic_v3_cache_dev.log" 2>&1 || '
+        + f'{{ echo "dev cache failed"; tail -40 "{R}/logs/qz/episodic_v3_cache_dev.log"; exit 3; }}\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
     return _base(
-        "episodic-cache-bce-s44",
+        "episodic-cache-v3-bce-s44",
         "Generate textual rule-retention/rule-change episodes and encode frozen-Qwen chronological feature caches (train+dev)",
         command,
         max_running_time_ms="10800000",
@@ -100,7 +100,7 @@ def cache_job():
 
 
 def train_job(seed):
-    out = f"{R}/runs/episodic_qwen_causal_v2_s{seed}"
+    out = f"{R}/runs/episodic_qwen_identifiable_v3_s{seed}"
     command = (
         _env()
         + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
@@ -110,11 +110,11 @@ def train_job(seed):
         + f'--train-cache "{DATA}/train.pt" --dev-cache "{DATA}/dev.pt" '
         + f'--output "{out}" --device cuda --seed {seed} '
         + f"--epochs 5 --inner-steps 4 --latent-dim 128 "
-        + f'> "{R}/logs/qz/episodic_train_s{seed}.log" 2>&1\n'
+        + f'> "{R}/logs/qz/episodic_v3_train_s{seed}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
     return _base(
-        f"episodic-train-s{seed}",
+        f"episodic-train-v3-s{seed}",
         "Train persistent-memory head on cached Qwen episodes; carry vs reset eval uses identical weights",
         command,
         max_running_time_ms="3600000",
@@ -124,8 +124,8 @@ def train_job(seed):
 
 def online_eval_job(seed):
     """Execute model predictions, not oracle logged actions, on untouched held-out test episodes."""
-    head = f"{R}/runs/episodic_qwen_causal_v2_s{seed}/best.pt"
-    out = f"{R}/runs/episodic_qwen_causal_v2_s{seed}/online_eval.json"
+    head = f"{R}/runs/episodic_qwen_identifiable_v3_s{seed}/best.pt"
+    out = f"{R}/runs/episodic_qwen_identifiable_v3_s{seed}/online_eval.json"
     command = (
         _env()
         + f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
@@ -135,11 +135,11 @@ def online_eval_job(seed):
         + f'--episodes "{DATA}/test.jsonl" --head "{head}" '
         + f'--qwen-model "$MODEL" --model-identity BCE_S44_FINAL '
         + f'--device cuda --output "{out}" '
-        + f'> "{R}/logs/qz/episodic_online_s{seed}.log" 2>&1\n'
+        + f'> "{R}/logs/qz/episodic_v3_online_s{seed}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
     return _base(
-        f"episodic-online-s{seed}",
+        f"episodic-online-v3-s{seed}",
         "Execute learned set actions in held-out cyclic-rule environment; compare carry vs reset using actual action-dependent observations",
         command,
         max_running_time_ms="7200000",
@@ -151,7 +151,10 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     payloads = [cache_job()] + [train_job(seed) for seed in seeds]\n    payloads += [online_eval_job(seed) for seed in seeds]
     for payload in payloads:
-        path = OUT_DIR / (payload["name"] + ".json")
+        # Preserve stable payload filenames used by documentation, while
+        # keeping submitted QZ job names uniquely tagged for v3.
+        filename = payload["name"].replace("-v3-", "-") + ".json"
+        path = OUT_DIR / filename
         path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )

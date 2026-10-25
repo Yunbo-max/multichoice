@@ -27,8 +27,11 @@ class CausalRuleGenerationTests(unittest.TestCase):
             e = gen_episode(random.Random(seed), horizon=9, rule_switch_prob=0.7)
             self.assertTrue(validate_episode(e))
             active = self.initial_state(e)
-            initial_rule = 1 if "cyclic right shift" in e["demonstrations"][0] else -1
-            self.assertEqual(e["steps"][0]["oracle_rule_before_decision"], initial_rule)
+            initial_rule = e["steps"][0]["oracle_rule_before_decision"]
+            # Examples encode the transformation, not an explicit right/left label.
+            self.assertEqual(e["demonstrations"][0], demo_text(initial_rule))
+            self.assertNotIn("cyclic right shift", e["demonstrations"][0])
+            self.assertNotIn("cyclic left shift", e["demonstrations"][0])
             for t, event in enumerate(e["steps"]):
                 current_rule = event["oracle_rule_before_decision"]
                 self.assertEqual(event["decision"]["state"], state_text(active))

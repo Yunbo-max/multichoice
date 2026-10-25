@@ -19,9 +19,12 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import itertools
 from pathlib import Path
 
-CELLS = ["Alpha", "Beta", "Gamma", "Delta"]
+# Five positions eliminate left/right ambiguity for every proper nonempty set.
+CELLS = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]
+ACTIVE_COUNT = 2
 
 
 def rotate(active, direction):
@@ -42,10 +45,12 @@ def demo_text(direction):
     n = len(CELLS)
     inp = [int(i == 0) for i in range(n)]
     out = rotate(inp, direction)
-    direction_name = "right" if direction > 0 else "left"
+    # Do not leak the symbolic answer "left" or "right". Only show a
+    # visible input/output demonstration from which the transformation may
+    # be inferred; the next decision must remember this observation.
     return (
-        f"Rule example: when only {CELLS[0]} is active, the active set becomes "
-        f"{active_text(out)} (a cyclic {direction_name} shift)."
+        f"Known cyclic-rule example: if only {CELLS[0]} is active, "
+        f"the next active component is {active_text(out)}."
     )
 
 
@@ -68,7 +73,7 @@ def gen_episode(rng, horizon, rule_switch_prob):
     direction = rng.choice((-1, 1))
     demos = [demo_text(direction)]
     active = [0] * len(CELLS)
-    for i in rng.sample(range(len(CELLS)), 2):
+    for i in rng.sample(range(len(CELLS)), ACTIVE_COUNT):
         active[i] = 1
     steps = []
     for t in range(horizon):
@@ -95,6 +100,7 @@ def gen_episode(rng, horizon, rule_switch_prob):
                     "options": option_block(),
                     "selection_mode": "multi",
                     "allow_empty": False,
+                    "allowed_cardinalities": [ACTIVE_COUNT],
                 },
                 "action_ids": option_ids(),
                 "gold": gold,
@@ -105,6 +111,7 @@ def gen_episode(rng, horizon, rule_switch_prob):
         )
         active = gold
     return {
+        "environment_schema": "cyclic5_fixed2_v3",
         "episode_id": f"ep-{rng.getrandbits(32):08x}",
         "demonstrations": demos,
         "steps": steps,
@@ -112,6 +119,8 @@ def gen_episode(rng, horizon, rule_switch_prob):
 
 
 def validate_episode(episode):
+    if episode.get("environment_schema") != "cyclic5_fixed2_v3":
+        raise ValueError("wrong generator version or legacy symmetric dataset")
     if not isinstance(episode.get("episode_id"), str) or not episode["episode_id"]:
         raise ValueError("episode_id must be nonempty")
     demos = episode.get("demonstrations", [])
@@ -126,6 +135,8 @@ def validate_episode(episode):
             raise ValueError("missing private pre-decision rule audit field")
         if step.get("step_index") != t:
             raise ValueError("step_index must equal chronological position")
+        if step.get("decision", {}).get("allowed_cardinalities") != [ACTIVE_COUNT]:
+            raise ValueError("environment must publicly enforce fixed count")
         ids = step.get("action_ids")
         if not isinstance(ids, list) or len(ids) != k or len(set(ids)) != k:
             raise ValueError("action_ids must be K distinct strings")
@@ -137,10 +148,52 @@ def validate_episode(episode):
                 and all(type(x) is int and x in (0, 1) for x in value)
             ):
                 raise ValueError(f"{field} must be K-length multi-hot")
-            if sum(value) not in range(1, k + 1):
-                raise ValueError(f"{field} must be a nonempty selection")
+            if sum(value) != ACTIVE_COUNT:
+                raise ValueError(f"{field} must select exactly {ACTIVE_COUNT} actions")
         if step.get("done") is not (t == len(sequence) - 1):
             raise ValueError("done must be true only for the final step")
+    # Every generated state must distinguish left from right. A symmetric
+    # state would make a no-memory policy look artificially successful.
+    if len(CELLS) % 2 == 0:
+        raise ValueError("cyclic-rule benchmark requires odd ring width")
+    # Audit exact oracle trajectory and change notification chronology,
+    # not merely that labels are valid 2-hot arrays.
+    if len(demos) != 1:
+        raise ValueError("this synthetic dataset requires one initial demonstration")
+    known_rule = sequence[0]["oracle_rule_before_decision"]
+    if demos[0] != demo_text(known_rule):
+        raise ValueError("initial demonstrated rule does not match oracle")
+    candidates = []
+    for pair in itertools.combinations(range(k), ACTIVE_COUNT):
+        bits = [int(i in pair) for i in range(k)]
+        if state_text(bits) == sequence[0]["decision"]["state"]:
+            candidates.append(bits)
+    if len(candidates) != 1:
+        raise ValueError("invalid initial two-active state")
+    active = candidates[0]
+    for t, step in enumerate(sequence):
+        state = step["decision"]
+        if (state.get("state") != state_text(active)
+            or state.get("selection_mode") != "multi"
+            or state.get("allow_empty") is not False
+            or state.get("options") != option_block()
+            or step.get("action_ids") != option_ids()):
+            raise ValueError("decision state/action protocol diverges from the simulator")
+        direction = step["oracle_rule_before_decision"]
+        if rotate(active, 1) == rotate(active, -1):
+            raise ValueError("ambiguous state: both hidden rules imply same answer")
+        expected_gold = rotate(active, direction)
+        if step["gold"] != expected_gold or step["executed_set"] != expected_gold:
+            raise ValueError("oracle action/label disagrees with visible state and rule")
+        feedback = ("After this decision the active components are "
+                    + active_text(step["executed_set"]) + ".")
+        if t < len(sequence) - 1:
+            next_rule = sequence[t + 1]["oracle_rule_before_decision"]
+            if next_rule != direction:
+                feedback += " The rule changed. " + demo_text(next_rule)
+        if step.get("post_observation") != feedback:
+            raise ValueError("post-action feedback leaks or omits a rule change")
+        active = step["executed_set"]
     return True
 
 

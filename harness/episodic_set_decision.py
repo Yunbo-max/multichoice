@@ -10,6 +10,7 @@ BDH-CQ-inspired interface, NOT the unpublished BDH-CQ architecture:
 The persistent memory differs from the per-query reasoning workspace.
 No gold labels or future observations are arguments to decide().
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -79,13 +80,20 @@ class EpisodicSetDecision(nn.Module):
         self.transition_observed_flag = nn.Linear(1, d, bias=False)
         self.transition_norm = nn.LayerNorm(d)
         self.memory_cell = nn.GRUCell(d, d)
+        # Decision head that reads the memory-conditioned latent and predicts the
+        # rule shift k (1..K-1). Trained with rule supervision so the persistent
+        # memory is forced to encode the rule, and used at inference for the
+        # structured (reachable-successor) readout.
+        self.shift_head = nn.Linear(d, max(1, config.max_options - 1))
 
     def empty_memory(self, batch_size: int, *, device: torch.device | str) -> Tensor:
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
         return torch.zeros(
-            batch_size, self.config.latent_dim,
-            device=device, dtype=torch.float32,
+            batch_size,
+            self.config.latent_dim,
+            device=device,
+            dtype=torch.float32,
         )
 
     def reset(self, memory: Tensor, episode_start: Tensor) -> Tensor:
@@ -109,9 +117,7 @@ class EpisodicSetDecision(nn.Module):
         input-output example pairs), not future held-out oracle labels.
         """
         self._check_memory(memory)
-        zero_context = memory.new_zeros(
-            (memory.shape[0], self.config.context_dim)
-        )
+        zero_context = memory.new_zeros((memory.shape[0], self.config.context_dim))
         return self.decision.encode_memory(
             zero_context,
             demonstrations,
@@ -141,13 +147,16 @@ class EpisodicSetDecision(nn.Module):
         if context.device != memory.device or native_logits.device != memory.device:
             raise ValueError("features and memory must be on same device")
         steps = self.config.inner_steps if inner_steps is None else inner_steps
-        return self.decision(
+        history = self.decision(
             context,
             native_logits,
             candidate_mask,
             steps=steps,
             memory_state=memory,
         )
+        shift_logits = self.shift_head(history[-1]["latent"])
+        history[-1]["shift_logits"] = shift_logits
+        return history
 
     def observe(
         self,
@@ -172,7 +181,10 @@ class EpisodicSetDecision(nn.Module):
             raise ValueError("context shape mismatch")
         if executed_set.ndim != 2 or executed_set.shape != candidate_mask.shape:
             raise ValueError("executed_set and candidate_mask must be B x K")
-        if executed_set.shape[0] != b or executed_set.shape[1] > self.config.max_options:
+        if (
+            executed_set.shape[0] != b
+            or executed_set.shape[1] > self.config.max_options
+        ):
             raise ValueError("executed_set dimensions are inconsistent")
         if candidate_mask.dtype != torch.bool:
             raise ValueError("candidate_mask must be bool")
@@ -196,21 +208,28 @@ class EpisodicSetDecision(nn.Module):
             raise ValueError("nonfinite environment observation")
         if option_features is not None:
             if option_features.shape != (
-                b, executed_set.shape[1], self.config.context_dim
+                b,
+                executed_set.shape[1],
+                self.config.context_dim,
             ):
                 raise ValueError("option_features must be B x K x context_dim")
-            if option_features.device != memory.device or not bool(torch.isfinite(option_features).all()):
-                raise ValueError("option features must be finite and on the memory device")
+            if option_features.device != memory.device or not bool(
+                torch.isfinite(option_features).all()
+            ):
+                raise ValueError(
+                    "option features must be finite and on the memory device"
+                )
             # Uses option meanings, not letter/index identity. Invariant when
             # the options and executed mask are permuted together.
             selected = (executed_set * candidate_mask).float()
             action_feature = (
-                self.transition_option(option_features.float())
-                * selected[..., None]
+                self.transition_option(option_features.float()) * selected[..., None]
             ).sum(dim=1) / selected.sum(dim=1, keepdim=True).clamp_min(1.0)
         else:
             if self.config.require_semantic_actions:
-                raise ValueError("changing-option tasks require semantic option_features")
+                raise ValueError(
+                    "changing-option tasks require semantic option_features"
+                )
             # Fixed-index action spaces only (e.g. grid-cell selections).
             action = F.pad(
                 executed_set.float() * candidate_mask.float(),

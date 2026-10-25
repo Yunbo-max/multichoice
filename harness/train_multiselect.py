@@ -161,16 +161,24 @@ def make_body(row, labels):
     ).rstrip()
     # Legacy rows retain their original prompt; new datasets declare the task.
     if "selection_mode" in row:
-        rule = (
-            "Select exactly one correct option."
-            if row["selection_mode"] == "single"
-            else "Select all correct options; "
-            + (
-                "an empty answer is allowed."
-                if row.get("allow_empty", False)
-                else "at least one option is correct."
+        support = allowed_counts(row)
+        if "allowed_cardinalities" in row:
+            if len(support) == 1:
+                rule = f"Select exactly {support[0]} correct options."
+            else:
+                counts = ", ".join(map(str, support))
+                rule = f"Select all correct options. Allowed answer counts: {counts}."
+        else:
+            rule = (
+                "Select exactly one correct option."
+                if row["selection_mode"] == "single"
+                else "Select all correct options; "
+                + (
+                    "an empty answer is allowed."
+                    if row.get("allow_empty", False)
+                    else "at least one option is correct."
+                )
             )
-        )
         body += "\nDecision rule: " + rule
     return body
 

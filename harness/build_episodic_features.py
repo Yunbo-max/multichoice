@@ -14,6 +14,7 @@ The next observation must have actually arrived after executed_set.
 Gold is never rendered into the prompt or passed to the memory update.
 Train/dev/test episode logs must be split before encoding.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,6 +35,21 @@ except ModuleNotFoundError:
 
 def encode_episode(source: dict, encoder) -> dict:
     """Pure adapter: can be tested with a fake encoder without loading Qwen."""
+    schema = source.get("environment_schema")
+    if schema is not None:
+        if schema == "cyclic5_fixed2_v3":
+            try:
+                from gen_text_episodes import validate_episode
+            except ModuleNotFoundError:
+                from harness.gen_text_episodes import validate_episode
+        elif schema == "cyclic7_shift2_v4":
+            try:
+                from gen_text_episodes_shift import validate_episode
+            except ModuleNotFoundError:
+                from harness.gen_text_episodes_shift import validate_episode
+        else:
+            raise ValueError("unknown/legacy synthetic environment protocol")
+        validate_episode(source)
     ident = source.get("episode_id")
     if not isinstance(ident, str) or not ident:
         raise ValueError("episode_id must be nonempty")
@@ -53,8 +69,15 @@ def encode_episode(source: dict, encoder) -> dict:
         if not isinstance(raw, dict):
             raise ValueError("missing decision")
         prompt_row = {
-            key: raw[key] for key in
-            ("state", "question", "options", "selection_mode", "allow_empty")
+            key: raw[key]
+            for key in (
+                "state",
+                "question",
+                "options",
+                "selection_mode",
+                "allow_empty",
+                "allowed_cardinalities",
+            )
             if key in raw
         }
         if prompt_row.get("selection_mode") != "multi":
@@ -75,7 +98,8 @@ def encode_episode(source: dict, encoder) -> dict:
         gold = event.get("gold")
         executed = event.get("executed_set")
         if not all(
-            isinstance(y, list) and len(y) == k
+            isinstance(y, list)
+            and len(y) == k
             and all(type(x) is int and x in (0, 1) for x in y)
             for y in (gold, executed)
         ):
@@ -92,22 +116,30 @@ def encode_episode(source: dict, encoder) -> dict:
         options = encoder.encode_option_meanings(prompt_row)
         observed = (
             encoder.encode_observation(feedback)[0].detach().cpu()
-            if feedback is not None else None
+            if feedback is not None
+            else None
         )
-        if context.shape[0] != 1 or logits.shape != (1, k) or options.shape != (1, k, context.shape[1]):
+        if (
+            context.shape[0] != 1
+            or logits.shape != (1, k)
+            or options.shape != (1, k, context.shape[1])
+        ):
             raise ValueError("encoder returned wrong decision/option dimensions")
-        entries.append({
-            "step_index": t,
-            "context": context[0].detach().cpu(),
-            "native_logits": logits[0].detach().cpu(),
-            "option_features": options[0].detach().cpu(),
-            "option_ids": action_ids,
-            "gold": torch.tensor(gold, dtype=torch.float32),
-            "executed_set": torch.tensor(executed, dtype=torch.float32),
-            "post_observation": observed,
-            "allowed": support,
-            "done": event["done"],
-        })
+        entries.append(
+            {
+                "step_index": t,
+                "context": context[0].detach().cpu(),
+                "native_logits": logits[0].detach().cpu(),
+                "option_features": options[0].detach().cpu(),
+                "option_ids": action_ids,
+                "gold": torch.tensor(gold, dtype=torch.float32),
+                "executed_set": torch.tensor(executed, dtype=torch.float32),
+                "post_observation": observed,
+                "allowed": support,
+                "done": event["done"],
+                "rule": event.get("oracle_rule_before_decision"),
+            }
+        )
     return {
         "episode_id": ident,
         "demonstrations": demo_features,
@@ -128,7 +160,9 @@ def main():
     if args.output.exists():
         raise FileExistsError("choose a new episodic cache filename")
     encoder = FrozenQwenDecisionEncoder(
-        args.model, device=args.device, dtype=args.dtype,
+        args.model,
+        device=args.device,
+        dtype=args.dtype,
         max_input_tokens=args.max_input_tokens,
     )
     episodes = []
@@ -145,13 +179,16 @@ def main():
     if not episodes:
         raise ValueError("empty episode log")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({
-        "schema": SCHEMA,
-        "model_identity": args.model_identity,
-        "episodes": episodes,
-        "source_path": str(args.input),
-        "note": "Post-action feedback and executed actions come from logged environment",
-    }, args.output)
+    torch.save(
+        {
+            "schema": SCHEMA,
+            "model_identity": args.model_identity,
+            "episodes": episodes,
+            "source_path": str(args.input),
+            "note": "Post-action feedback and executed actions come from logged environment",
+        },
+        args.output,
+    )
 
 
 if __name__ == "__main__":
