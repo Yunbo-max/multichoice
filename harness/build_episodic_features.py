@@ -54,7 +54,7 @@ def encode_episode(source: dict, encoder) -> dict:
             raise ValueError("missing decision")
         prompt_row = {
             key: raw[key] for key in
-            ("state", "question", "options", "selection_mode", "allow_empty")
+            ("state", "question", "options", "selection_mode", "allow_empty", "allowed_cardinalities")
             if key in raw
         }
         if prompt_row.get("selection_mode") != "multi":
