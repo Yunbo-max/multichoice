@@ -14,7 +14,7 @@ R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_pub
 V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
 MODEL = f"{R}/runs/qz/grouped_bce_4gpu_s44/v1/final"
 DATA = f"{R}/runs/episodic_data_shift_v5"
-HEAD = f"{R}/runs/episodic_shift_qwen_v5_s"
+HEAD = f"{R}/runs/episodic_shift_qwen_v6_s"
 
 WORKSPACE = "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6"
 PROJECT = "project-160ccb20-98ab-4538-a847-01d1f83d5b0f"
