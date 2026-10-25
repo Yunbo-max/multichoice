@@ -49,6 +49,15 @@ that is allowed to choose all 5 actions can execute the full set. Afterwards
 R_+(FULL) == R_-(FULL) == FULL, so the environment is an absorbing trivial
 state. An empty-set action has the same problem if permitted.
 
+A concrete deterministic counterexample on the old environment:
+execute ALL four actions at t=0, then always execute ALL four again.
+With an initially two-active state, t=0 is wrong; because FULL is absorbing
+under both rotations, the subsequent 7 decisions are all correct. This
+constructs first-step EM=0, later EM=1 and strict trajectory EM=0 without
+learning any hidden rule or memory. It demonstrates a protocol-level metric
+failure, **not** that a specific trained checkpoint actually used this policy.
+Per-episode predicted-set cardinalities must be inspected to confirm that.
+
 **Fix both issues, at once:**
 
 - Ring size K=5, two simultaneous active cells/actions.
