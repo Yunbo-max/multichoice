@@ -90,13 +90,21 @@ def initial_state(gen, episode: dict) -> list[int]:
 
 
 @torch.no_grad()
-def run_episode(gen, encoder, agent, episode: dict, *, mode: str = "carry") -> dict:
+def run_episode(
+    gen, encoder, agent, episode: dict, *,
+    mode: str = "carry", rule_schedule: str = "recorded",
+) -> dict:
     if mode not in ("carry", "reset", "prime_only"):
         raise ValueError("mode must be carry | reset | prime_only")
+    if rule_schedule not in ("recorded", "initial_only"):
+        raise ValueError("rule_schedule must be recorded | initial_only")
     states = episode.get("steps")
     if not states:
         raise ValueError("empty episode")
     active = initial_state(gen, episode)
+    initial_rule = states[0].get("oracle_rule_before_decision")
+    if not _valid_rule(gen, initial_rule):
+        raise ValueError("invalid initial hidden rule")
     memory = agent.empty_memory(1, device=encoder.device)
     demonstrations = encoder.encode_demonstrations(episode.get("demonstrations", []))
     if demonstrations.shape[1]:
@@ -111,7 +119,14 @@ def run_episode(gen, encoder, agent, episode: dict, *, mode: str = "carry") -> d
         if t > 0 and mode == "reset":
             memory = agent.empty_memory(1, device=encoder.device)
         # "prime_only" freezes the primed memory S_0 across steps (no observe).
-        rule = oracle.get("oracle_rule_before_decision")
+        # For a controlled no-switch diagnostic, freeze the SAME initial
+        # hidden rule across the episode, but preserve policy execution and
+        # agent-state transitions. Never reveal the counterfactual rule to
+        # the agent except through the initial demonstration.
+        rule = (
+            initial_rule if rule_schedule == "initial_only"
+            else oracle.get("oracle_rule_before_decision")
+        )
         if not _valid_rule(gen, rule):
             raise ValueError("requires causally audited synthetic rule timeline")
         row = dict(oracle["decision"])
@@ -162,7 +177,10 @@ def run_episode(gen, encoder, agent, episode: dict, *, mode: str = "carry") -> d
             + "."
         )
         if t + 1 < len(states):
-            following = states[t + 1].get("oracle_rule_before_decision")
+            following = (
+                initial_rule if rule_schedule == "initial_only"
+                else states[t + 1].get("oracle_rule_before_decision")
+            )
             if not _valid_rule(gen, following):
                 raise ValueError("next oracle rule invalid")
             if following != rule:
@@ -198,11 +216,17 @@ def run_episode(gen, encoder, agent, episode: dict, *, mode: str = "carry") -> d
 
 
 @torch.no_grad()
-def evaluate(gen, encoder, agent, episodes: list[dict], *, mode: str) -> dict:
+def evaluate(
+    gen, encoder, agent, episodes: list[dict], *,
+    mode: str, rule_schedule: str = "recorded",
+) -> dict:
     first = later = later_count = total = traj = 0
     nll = 0.0
     for episode in episodes:
-        result = run_episode(gen, encoder, agent, episode, mode=mode)
+        result = run_episode(
+            gen, encoder, agent, episode,
+            mode=mode, rule_schedule=rule_schedule,
+        )
         first += result["first_correct"]
         later += result["later_correct"]
         later_count += result["n_steps"] - 1
@@ -229,6 +253,8 @@ def main():
     p.add_argument("--model-identity", required=True)
     p.add_argument("--output", type=Path)
     p.add_argument("--limit", type=int, default=0)
+    p.add_argument("--include-no-switch-control", action="store_true",
+                   help="evaluate carry/reset/prime-only on a matched counterfactual with the initial rule frozen")
     p.add_argument("--device", default="cuda")
     p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     args = p.parse_args()
@@ -264,6 +290,16 @@ def main():
         raise ValueError("head incompatible with Qwen hidden width or action count")
     agent = EpisodicSetDecision(config).to(encoder.device).eval()
     agent.load_state_dict(saved["model"], strict=True)
+    no_switch = None
+    if args.include_no_switch_control:
+        no_switch = {
+            mode: evaluate(
+                gen, encoder, agent, episodes,
+                mode=mode, rule_schedule="initial_only",
+            )
+            for mode in ("carry", "reset", "prime_only")
+        }
+
     report = {
         "head": str(args.head),
         "qwen_identity": args.model_identity,
@@ -272,6 +308,7 @@ def main():
         "carry": evaluate(gen, encoder, agent, episodes, mode="carry"),
         "reset_every_step": evaluate(gen, encoder, agent, episodes, mode="reset"),
         "prime_only": evaluate(gen, encoder, agent, episodes, mode="prime_only"),
+        "no_switch_counterfactual": no_switch,
         "note": "private rule used by environment only; Qwen actions are executed online",
     }
     print(json.dumps(report, indent=2))
