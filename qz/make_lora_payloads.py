@@ -29,6 +29,7 @@ def make(seed):
         f"R={R}\nV={V}\nMODEL={MODEL}\n"
         "export HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\n"
         "export PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\n"
+        "export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\n"
         f'mkdir -p "{R}/logs/qz"\ncd "{R}"\n'
         f'test -f "{DATA}/train.jsonl" && test -f "{DATA}/dev.jsonl" || '
         '{ echo "missing raw shift episodes"; exit 3; }\n'

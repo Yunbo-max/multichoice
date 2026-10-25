@@ -82,6 +82,8 @@ class TrainableQwenEncoder:
             ),
         )
         self.model.to(self.device)
+        self.model.gradient_checkpointing_enable()
+        self.model.enable_input_require_grads()
         base = self.model.model if hasattr(self.model, "model") else self.model
         self.backbone = getattr(base.model, "language_model", base.model)
         head = base.get_output_embeddings()
@@ -221,7 +223,7 @@ def main():
     p.add_argument("--latent-dim", type=int, default=128)
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--lr", type=float, default=1e-4)
-    p.add_argument("--accumulate-episodes", type=int, default=2)
+    p.add_argument("--accumulate-episodes", type=int, default=1)
     p.add_argument("--seed", type=int, default=43)
     p.add_argument("--device", default="cuda")
     p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
