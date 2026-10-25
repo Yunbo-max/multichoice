@@ -110,6 +110,15 @@ retraining with GRPO would help.
 - qz_memory_probe/episodic-action-source-probe-s43/s44/s45.json:
   DEV probe fitting; matched TEST expert vs policy trajectories, with fresh
   output filenames to preserve prior probes.
+- harness/eval_episodic_text_online.py --include-no-switch-control:
+  paired environment counterfactual (same initial episodes / checkpoints)
+  which freezes the initial hidden rule for all subsequent steps and suppresses
+  rule-switch demonstrations in post-action feedback. All actions are still
+  chosen and executed by the corresponding model policy.
+- qz_memory_probe/episodic-memory-mode-noswitch-s43/s44/s45.json:
+  compare carry, reset, and prime_only on both the recorded switching
+  schedule and its matched no-switch environment. This identifies whether
+  retaining S_0 helps when the hidden rule genuinely remains unchanged.
 
 Use:
 
@@ -117,8 +126,12 @@ Use:
     git switch research/episodic-action-source-diagnostic-20261025
     python -m unittest discover -s tests -p test_action_source_diagnostic.py -v
 
-Then run the three new QZ job configs (without re-training the 4B model).
-These are GPU inference/feature-extraction diagnostics only.
+Then run the three action-source QZ job configs AND the three
+memory-mode no-switch QZ job configs (no retraining of the 4B model).
+These are frozen-Qwen inference/feature-extraction diagnostics only.
+Original switching and counterfactual no-switch episodes are paired using
+the same visible initial state and exogenous episode identity. Interpret the
+post-hoc counterfactual as a diagnostic, not a fresh untouched benchmark.
 
 ## 5. Pending validation and next architectural fork
 
