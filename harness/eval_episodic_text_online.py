@@ -90,7 +90,9 @@ def initial_state(gen, episode: dict) -> list[int]:
 
 
 @torch.no_grad()
-def run_episode(gen, encoder, agent, episode: dict, *, carry: bool) -> dict:
+def run_episode(gen, encoder, agent, episode: dict, *, mode: str = "carry") -> dict:
+    if mode not in ("carry", "reset", "prime_only"):
+        raise ValueError("mode must be carry | reset | prime_only")
     states = episode.get("steps")
     if not states:
         raise ValueError("empty episode")
@@ -106,8 +108,9 @@ def run_episode(gen, encoder, agent, episode: dict, *, carry: bool) -> dict:
     for t, oracle in enumerate(states):
         if oracle.get("step_index") != t:
             raise ValueError("nonchronological oracle episode")
-        if t > 0 and not carry:
+        if t > 0 and mode == "reset":
             memory = agent.empty_memory(1, device=encoder.device)
+        # "prime_only" freezes the primed memory S_0 across steps (no observe).
         rule = oracle.get("oracle_rule_before_decision")
         if not _valid_rule(gen, rule):
             raise ValueError("requires causally audited synthetic rule timeline")
@@ -170,17 +173,18 @@ def run_episode(gen, encoder, agent, episode: dict, *, carry: bool) -> dict:
         action = torch.tensor(executed, dtype=torch.float32, device=encoder.device)[
             None
         ]
-        memory = agent.observe(
-            memory,
-            context,
-            action,
-            mask,
-            obs,
-            option_features=option_features,
-            done=torch.tensor(
-                [t == len(states) - 1], dtype=torch.bool, device=encoder.device
-            ),
-        )
+        if mode != "prime_only":
+            memory = agent.observe(
+                memory,
+                context,
+                action,
+                mask,
+                obs,
+                option_features=option_features,
+                done=torch.tensor(
+                    [t == len(states) - 1], dtype=torch.bool, device=encoder.device
+                ),
+            )
         active = executed
     return {
         "first_correct": first,
@@ -194,11 +198,11 @@ def run_episode(gen, encoder, agent, episode: dict, *, carry: bool) -> dict:
 
 
 @torch.no_grad()
-def evaluate(gen, encoder, agent, episodes: list[dict], *, carry: bool) -> dict:
+def evaluate(gen, encoder, agent, episodes: list[dict], *, mode: str) -> dict:
     first = later = later_count = total = traj = 0
     nll = 0.0
     for episode in episodes:
-        result = run_episode(gen, encoder, agent, episode, carry=carry)
+        result = run_episode(gen, encoder, agent, episode, mode=mode)
         first += result["first_correct"]
         later += result["later_correct"]
         later_count += result["n_steps"] - 1
@@ -265,8 +269,9 @@ def main():
         "qwen_identity": args.model_identity,
         "dataset": str(args.episodes),
         "schema": schema,
-        "carry": evaluate(gen, encoder, agent, episodes, carry=True),
-        "reset_every_step": evaluate(gen, encoder, agent, episodes, carry=False),
+        "carry": evaluate(gen, encoder, agent, episodes, mode="carry"),
+        "reset_every_step": evaluate(gen, encoder, agent, episodes, mode="reset"),
+        "prime_only": evaluate(gen, encoder, agent, episodes, mode="prime_only"),
         "note": "private rule used by environment only; Qwen actions are executed online",
     }
     print(json.dumps(report, indent=2))

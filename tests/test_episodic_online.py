@@ -55,7 +55,7 @@ class OnlineExecutionTests(unittest.TestCase):
     def test_eval_executes_policy_not_oracle_and_rebuilds_feedback(self):
         ep = gen_episode(random.Random(43), horizon=5, rule_switch_prob=1.0)
         encoder = FakeEncoder()
-        result = run_episode(gen, encoder, self.make_agent(), ep, carry=True)
+        result = run_episode(gen, encoder, self.make_agent(), ep, mode="carry")
         self.assertEqual(result["n_steps"], 5)
         self.assertEqual(len(encoder.prompt_rows), 5)
         self.assertTrue(all(x == [1, 1, 0, 0, 0] for x in result["executed_actions"]))
@@ -85,15 +85,15 @@ class OnlineExecutionTests(unittest.TestCase):
         later["steps"][1]["oracle_rule_before_decision"] *= -1
         enc1, enc2 = FakeEncoder(), FakeEncoder()
         # Both see exactly the same decision state at time 0.
-        run_episode(gen, enc1, self.make_agent(), ep, carry=True)
-        run_episode(gen, enc2, self.make_agent(), later, carry=True)
+        run_episode(gen, enc1, self.make_agent(), ep, mode="carry")
+        run_episode(gen, enc2, self.make_agent(), later, mode="carry")
         self.assertEqual(enc1.prompt_rows[0], enc2.prompt_rows[0])
 
     def test_first_step_same_with_and_without_carry(self):
         ep = gen_episode(random.Random(5), horizon=4, rule_switch_prob=0.7)
         agent = self.make_agent()
-        a = run_episode(gen, FakeEncoder(), agent, ep, carry=True)
-        b = run_episode(gen, FakeEncoder(), agent, ep, carry=False)
+        a = run_episode(gen, FakeEncoder(), agent, ep, mode="carry")
+        b = run_episode(gen, FakeEncoder(), agent, ep, mode="reset")
         self.assertEqual(a["executed_actions"][0], b["executed_actions"][0])
         self.assertEqual(initial_state(gen, ep), initial_state(gen, ep))
 
