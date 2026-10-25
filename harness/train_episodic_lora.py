@@ -82,8 +82,9 @@ class TrainableQwenEncoder:
             ),
         )
         self.model.to(self.device)
-        self.backbone = getattr(self.model.model, "language_model", self.model.model)
-        head = self.model.get_output_embeddings()
+        base = self.model.model if hasattr(self.model, "model") else self.model
+        self.backbone = getattr(base.model, "language_model", base.model)
+        head = base.get_output_embeddings()
         self.label_weight = head.weight.index_select(
             0, torch.tensor(self.label_ids, device=self.device, dtype=torch.long)
         ).float()
