@@ -104,7 +104,9 @@ and on-policy actor selection.
 
 ## 5. New experiment paths and protocol
 
-All staged QZ payloads now point at fresh, isolated paths:
+All staged QZ payloads now point at fresh, isolated paths; submitted job
+names and log names are also uniquely tagged v3 (payload filenames remain
+stable for the documented CLI and repository links):
 
     runs/episodic_data_identifiable_v3/
     runs/episodic_qwen_identifiable_v3_s43/
