@@ -19,7 +19,7 @@ try:
         initial_state,
     )
     from structured_readout import shift
-    from memory_probe import counterfactual_summary, fit_probe_split, probe_predictions
+    from memory_probe import counterfactual_summary, fit_probe, fit_probe_split, probe_predictions
     from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from recurrent_set_decision import set_map
@@ -33,7 +33,7 @@ except ModuleNotFoundError:
         initial_state,
     )
     from harness.structured_readout import shift
-    from harness.memory_probe import fit_probe_split, counterfactual_summary, probe_predictions
+    from harness.memory_probe import fit_probe, fit_probe_split, counterfactual_summary, probe_predictions
     from harness.episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
     from harness.episodic_qwen_bridge import FrozenQwenDecisionEncoder
     from harness.recurrent_set_decision import set_map
@@ -132,6 +132,8 @@ def counterfactual(gen, encoder, agent, state):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--episodes", type=Path, required=True)
+    p.add_argument("--probe-fit-episodes", type=Path,
+                   help="independent DEV episode logs for probe fitting; --episodes stays untouched TEST")
     p.add_argument("--head", type=Path, required=True)
     p.add_argument("--qwen-model", type=Path, required=True)
     p.add_argument("--model-identity", required=True)
@@ -149,7 +151,27 @@ def main():
     schema = episodes[0].get("environment_schema")
     gen = _generator(schema)
     for episode in episodes:
+        if episode.get("environment_schema") != schema:
+            raise ValueError("mixed evaluation schemas")
         gen.validate_episode(episode)
+    fitting_episodes = None
+    if args.probe_fit_episodes is not None:
+        fitting_episodes = [
+            json.loads(line) for line in args.probe_fit_episodes.open()
+            if line.strip()
+        ]
+        if not fitting_episodes:
+            raise ValueError("empty DEV probe-fit episodes")
+        ids_test = {ep["episode_id"] for ep in episodes}
+        ids_fit = {ep["episode_id"] for ep in fitting_episodes}
+        if len(ids_fit) != len(fitting_episodes) or len(ids_test) != len(episodes):
+            raise ValueError("duplicate episode IDs in fit/test data")
+        if ids_test & ids_fit:
+            raise ValueError("DEV probe fitting and TEST evaluation episodes overlap")
+        for ep in fitting_episodes:
+            if ep.get("environment_schema") != schema:
+                raise ValueError("probe train/test schema mismatch")
+            gen.validate_episode(ep)
     saved = torch.load(args.head, map_location="cpu", weights_only=True)
     if (
         saved.get("schema") != CKPT_SCHEMA
@@ -165,10 +187,27 @@ def main():
 
     memories, labels, switched, episode_ids = collect_probe(gen, encoder, agent, episodes)
     n_classes = len(gen.CELLS) - 1
-    probe, train_acc, test_acc, split = fit_probe_split(
-        memories, labels, n_classes=n_classes, groups=episode_ids,
-        return_indices=True,
-    )
+    if fitting_episodes is None:
+        probe, train_acc, test_acc, split = fit_probe_split(
+            memories, labels, n_classes=n_classes, groups=episode_ids,
+            return_indices=True,
+        )
+    else:
+        fit_memories, fit_labels, _, fit_ids = collect_probe(
+            gen, encoder, agent, fitting_episodes
+        )
+        probe, train_acc = fit_probe(
+            fit_memories, fit_labels, n_classes=n_classes,
+        )
+        predictions = probe_predictions(probe, memories)
+        test_acc = sum(int(p == y) for p, y in zip(predictions, labels)) / len(labels)
+        split = {
+            "train_indices": list(range(len(fit_memories))),
+            "test_indices": list(range(len(memories))),
+            "train_episodes": len(set(fit_ids)),
+            "test_episodes": len(set(episode_ids)),
+            "split_unit": "separate_dev_test_episodes",
+        }
 
     def _split_acc(flags):
         # Condition-specific diagnostics on ONE fixed probe and the SAME
@@ -193,6 +232,7 @@ def main():
         "probe": {
             "n_samples": len(memories),
             "split_unit": split["split_unit"],
+            "fit_dataset": str(args.probe_fit_episodes) if args.probe_fit_episodes is not None else "group_split_within_eval_dataset",
             "train_episodes": split["train_episodes"],
             "test_episodes": split["test_episodes"],
             "train_steps": len(split["train_indices"]),
