@@ -13,6 +13,16 @@ pilot covers only 200 episodes x 2 epochs with a train loss of 0.439 -> 0.429
 under the normalize-by-7 objective. This is insufficient to rule out
 representational limits or suggest millions of extra episodes are necessary.
 
+**Important finite-task sanity check:** the seven-cell, exactly-two-active,
+six-shift environment has only C(7,2) * 6 = 126 distinct (visible
+state, current rule) one-step transformations. With 1024 episodes x 8 steps,
+the learner sees many repeats of these elementary cases (although the
+history/observations vary). A model that cannot memorize 32 small
+demonstration-conditioned examples is unlikely to be rescued by blindly
+scaling to millions of duplicated trajectories. First test representation,
+prompt validity, LoRA gradients and one-step train fit; only after passing
+that gate scale diverse histories and novel rule families.
+
 A relevant random-set uniform reference (2-of-7) is:
     log(21)/7 = 0.435
 and a known reachable-six rule classifier's uniform NLL is log(6)=1.792
