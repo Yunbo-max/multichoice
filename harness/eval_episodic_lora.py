@@ -38,14 +38,20 @@ def main():
     p.add_argument("--legacy-lora-alpha", type=int, default=32,
                    help="only used for legacy checkpoints")
     p.add_argument("--output", type=Path)
+    p.add_argument("--limit", type=int, default=0,
+                   help="positive small value for a quick DEV smoke; zero = all episodes")
     p.add_argument("--device", default="cuda")
     p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     args = p.parse_args()
+    if args.limit < 0:
+        p.error("--limit must be nonnegative")
     if args.output is not None and args.output.exists():
         raise FileExistsError("report already exists")
     episodes = [json.loads(l) for l in args.episodes.open() if l.strip()]
     if not episodes:
         raise ValueError("empty eval set")
+    if args.limit:
+        episodes = episodes[:args.limit]
     schema = episodes[0].get("environment_schema")
     gen = _generator(schema)
     for ep in episodes:
