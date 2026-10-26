@@ -154,8 +154,13 @@ class TrainableQwenEncoder:
         return self.model.parameters()
 
 
-def replay(gen, encoder, agent, episode):
-    """On-policy replay: the model's own action drives the memory, gold drives the loss."""
+def replay(gen, encoder, agent, episode, *, return_stats=False):
+    """On-policy replay: model actions drive the memory, gold drives the loss.
+
+    return_stats=True is intended for inference-time DEV evaluation, where
+    executed action set accuracy and NLL must both be measured. Existing
+    training calls keep returning a scalar differentiable mean loss.
+    """
     active = _initial(gen, episode)
     memory = agent.empty_memory(1, device=encoder.device)
     demos = encoder.encode_demonstrations(episode.get("demonstrations", []))
@@ -165,6 +170,8 @@ def replay(gen, encoder, agent, episode):
     # every step (the on-policy loop is otherwise dominated by redundant forwards).
     option_features = encoder.encode_option_meanings(episode["steps"][0]["decision"])
     losses = []
+    correct_steps = 0
+    all_correct = True
     k = len(gen.CELLS)
     for t, oracle in enumerate(episode["steps"]):
         rule = oracle["oracle_rule_before_decision"]
@@ -185,6 +192,9 @@ def replay(gen, encoder, agent, episode):
             "indices"
         ]
         executed = [int(i in idx) for i in range(k)]
+        correct = executed == gold
+        correct_steps += int(correct)
+        all_correct = all_correct and correct
         feedback = (
             "After this decision the active components are "
             + gen.active_text(executed)
@@ -212,7 +222,43 @@ def replay(gen, encoder, agent, episode):
             ),
         )
         active = executed
-    return torch.stack(losses).mean()
+    avg_nll = torch.stack(losses).mean()
+    if return_stats:
+        return {
+            "loss": avg_nll,
+            "step_em": correct_steps / len(losses),
+            "trajectory_em": float(all_correct),
+            "n_steps": len(losses),
+        }
+    return avg_nll
+
+
+@torch.no_grad()
+def evaluate_onpolicy_dev(gen, encoder, agent, episodes):
+    """Choose checkpoints on actual on-policy DEV states, never training loss.
+
+    This is intentionally a bounded fixed development subset for expensive
+    4B + LoRA pilots. For an official result, run a larger locked DEV split,
+    then one untouched TEST evaluation using the selected checkpoint.
+    """
+    if not episodes:
+        raise ValueError("dev episodes cannot be empty")
+    encoder.model.eval()
+    agent.eval()
+    losses, correct, trajectories, total_steps = 0.0, 0.0, 0.0, 0
+    for episode in episodes:
+        report = replay(gen, encoder, agent, episode, return_stats=True)
+        losses += float(report["loss"].detach()) * report["n_steps"]
+        correct += report["step_em"] * report["n_steps"]
+        trajectories += report["trajectory_em"]
+        total_steps += report["n_steps"]
+    return {
+        "step_em": correct / total_steps,
+        "trajectory_em": trajectories / len(episodes),
+        "normalized_set_nll": losses / total_steps,
+        "n_episodes": len(episodes),
+        "n_steps": total_steps,
+    }
 
 
 def _initial(gen, episode):
