@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "episodic-lora-reliability-dev-eval-s43",
+  "description": "DEV-only on-policy LoRA adapter restore/readout smoke after verified 24-episode training; not held-out TEST",
+  "framework": "pytorch",
+  "command": "set -euo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nMODEL=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/qz/grouped_bce_4gpu_s44/v1/final\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nmkdir -p \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/logs/qz\"\ncd \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish\"\ngrep -q \"load_lora_tensors_verified\" harness/eval_episodic_lora.py || { echo \"wrong research branch: adapter restore validation missing\"; exit 9; }\n\"$V/bin/python\" harness/eval_episodic_lora.py --limit 6 --model-identity BCE_S44_FINAL --episodes \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/episodic_data_shift_v5/dev.jsonl\" --checkpoint \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/episodic_lora_reliability_smoke_s43/best.pt\" --qwen-model \"$MODEL\" --modules \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/innerjev/configs/4B/modules.json\" --device cuda --output \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/runs/episodic_lora_reliability_smoke_s43/dev_online_smoke.json\" > \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish/logs/qz/episodic_lora_reliability_eval_s43.log\" 2>&1\nstatus=$?; echo \"JOB EXIT=$status\"; exit $status\n",
+  "max_running_time_ms": "7200000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "8a53ac21-299a-4dee-85e9-9c04a544cf8d",
+      "shm_gi": 900
+    }
+  ]
+}
