@@ -26,6 +26,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
 from recurrent_set_decision import gold_set_nll, set_map
 from set_distillation import allowed_counts
+from episodic_lora_checkpoint import check_lora_gradients, lora_tensors
 
 
 class TrainableQwenEncoder:
@@ -42,6 +43,11 @@ class TrainableQwenEncoder:
             from harness.train_multiselect import option_labels, make_prompt
 
         self.device = torch.device(device)
+        self.checkpoint_path = str(checkpoint)
+        self.lora_r = int(lora_r)
+        self.lora_alpha = int(lora_alpha)
+        self.lora_modules = list(modules)
+        self.dtype_name = dtype
         self.make_prompt = make_prompt
         self.tokenizer = AutoTokenizer.from_pretrained(
             checkpoint, local_files_only=True
@@ -54,8 +60,9 @@ class TrainableQwenEncoder:
             self.tokenizer.encode(s, add_special_tokens=False)[0] for s in self.labels
         ]
         cfg = AutoConfig.from_pretrained(checkpoint, local_files_only=True)
-        if getattr(cfg, "mamba_ssm_dtype", None) == "float32":
+        if dtype == "bf16" and getattr(cfg, "mamba_ssm_dtype", None) == "float32":
             cfg.mamba_ssm_dtype = "bfloat16"
+        self.model_ssm_dtype = str(getattr(cfg, "mamba_ssm_dtype", None))
         cls = (
             Qwen3_5ForConditionalGeneration
             if cfg.model_type == "qwen3_5"
@@ -66,20 +73,11 @@ class TrainableQwenEncoder:
             "fp16": torch.float16,
             "fp32": torch.float32,
         }[dtype]
+        # The previous implementation loaded 4B twice and discarded the
+        # SSM dtype override from its first load. Keep exactly one load.
         self.model = cls.from_pretrained(
             checkpoint,
             config=cfg,
-            dtype=resolved,
-            attn_implementation="sdpa",
-            local_files_only=True,
-        )
-        resolved = {
-            "bf16": torch.bfloat16,
-            "fp16": torch.float16,
-            "fp32": torch.float32,
-        }[dtype]
-        self.model = cls.from_pretrained(
-            checkpoint,
             dtype=resolved,
             attn_implementation="sdpa",
             local_files_only=True,
