@@ -250,6 +250,8 @@ def evaluate_onpolicy_dev(gen, encoder, agent, episodes):
     losses, correct, trajectories, total_steps = 0.0, 0.0, 0.0, 0
     for episode in episodes:
         report = replay(gen, encoder, agent, episode, return_stats=True)
+        if not torch.isfinite(report["loss"]).item():
+            raise FloatingPointError("nonfinite on-policy DEV loss")
         losses += float(report["loss"].detach()) * report["n_steps"]
         correct += report["step_em"] * report["n_steps"]
         trajectories += report["trajectory_em"]
@@ -350,6 +352,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     best = None
     best_epoch = 0
+    best_dev_metrics = None
     gradient_report = None
     for epoch in range(args.epochs):
         rng.shuffle(train)
@@ -404,6 +407,7 @@ def main():
         if best is None or candidate > best:
             best = candidate
             best_epoch = epoch + 1
+            best_dev_metrics = dict(dev_metrics)
             checkpoint = {
                 "schema": "episodic-set-head-v1",
                 "checkpoint_type": "qwen3.5_lora_plus_episodic_head",
@@ -439,7 +443,8 @@ def main():
             json.dumps({
                 "selected_epoch": best_epoch,
                 "last_epoch": epoch + 1,
-                "dev_selection": dev_metrics,
+                "best_dev_selection": best_dev_metrics,
+                "last_dev_evaluation": dev_metrics,
                 "train_nll_last": total / len(train),
                 "first_lora_backward": gradient_report,
             }, indent=2) + "\n"
