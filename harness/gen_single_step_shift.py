@@ -86,7 +86,7 @@ def main():
                     "id": f"shift-step-{active_text(state).replace(', ', '-')}-k{k}",
                     "source": "shift_single_step",
                     "lang": "en",
-                    "split": "train" if path == args.train_output else "test",
+                    "split": "train" if path == args.train_output else "dev",
                     "state": f"The active components are: {active_text(state)}.",
                     "question": (
                         demo_text(k)
