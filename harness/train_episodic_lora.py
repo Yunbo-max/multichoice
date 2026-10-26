@@ -26,6 +26,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
 from recurrent_set_decision import gold_set_nll, set_map
 from set_distillation import allowed_counts
+from episodic_lora_checkpoint import check_lora_gradients, lora_tensors
 
 
 class TrainableQwenEncoder:
@@ -42,6 +43,11 @@ class TrainableQwenEncoder:
             from harness.train_multiselect import option_labels, make_prompt
 
         self.device = torch.device(device)
+        self.checkpoint_path = str(checkpoint)
+        self.lora_r = int(lora_r)
+        self.lora_alpha = int(lora_alpha)
+        self.lora_modules = list(modules)
+        self.dtype_name = dtype
         self.make_prompt = make_prompt
         self.tokenizer = AutoTokenizer.from_pretrained(
             checkpoint, local_files_only=True
@@ -54,8 +60,11 @@ class TrainableQwenEncoder:
             self.tokenizer.encode(s, add_special_tokens=False)[0] for s in self.labels
         ]
         cfg = AutoConfig.from_pretrained(checkpoint, local_files_only=True)
-        if getattr(cfg, "mamba_ssm_dtype", None) == "float32":
+        if dtype == "bf16" and str(getattr(cfg, "mamba_ssm_dtype", None)) in (
+            "float32", "torch.float32"
+        ):
             cfg.mamba_ssm_dtype = "bfloat16"
+        self.model_ssm_dtype = str(getattr(cfg, "mamba_ssm_dtype", None))
         cls = (
             Qwen3_5ForConditionalGeneration
             if cfg.model_type == "qwen3_5"
@@ -66,20 +75,11 @@ class TrainableQwenEncoder:
             "fp16": torch.float16,
             "fp32": torch.float32,
         }[dtype]
+        # The previous implementation loaded 4B twice and discarded the
+        # SSM dtype override from its first load. Keep exactly one load.
         self.model = cls.from_pretrained(
             checkpoint,
             config=cfg,
-            dtype=resolved,
-            attn_implementation="sdpa",
-            local_files_only=True,
-        )
-        resolved = {
-            "bf16": torch.bfloat16,
-            "fp16": torch.float16,
-            "fp32": torch.float32,
-        }[dtype]
-        self.model = cls.from_pretrained(
-            checkpoint,
             dtype=resolved,
             attn_implementation="sdpa",
             local_files_only=True,
@@ -156,8 +156,13 @@ class TrainableQwenEncoder:
         return self.model.parameters()
 
 
-def replay(gen, encoder, agent, episode):
-    """On-policy replay: the model's own action drives the memory, gold drives the loss."""
+def replay(gen, encoder, agent, episode, *, return_stats=False):
+    """On-policy replay: model actions drive the memory, gold drives the loss.
+
+    return_stats=True is intended for inference-time DEV evaluation, where
+    executed action set accuracy and NLL must both be measured. Existing
+    training calls keep returning a scalar differentiable mean loss.
+    """
     active = _initial(gen, episode)
     memory = agent.empty_memory(1, device=encoder.device)
     demos = encoder.encode_demonstrations(episode.get("demonstrations", []))
@@ -167,6 +172,8 @@ def replay(gen, encoder, agent, episode):
     # every step (the on-policy loop is otherwise dominated by redundant forwards).
     option_features = encoder.encode_option_meanings(episode["steps"][0]["decision"])
     losses = []
+    correct_steps = 0
+    all_correct = True
     k = len(gen.CELLS)
     for t, oracle in enumerate(episode["steps"]):
         rule = oracle["oracle_rule_before_decision"]
@@ -187,6 +194,9 @@ def replay(gen, encoder, agent, episode):
             "indices"
         ]
         executed = [int(i in idx) for i in range(k)]
+        correct = executed == gold
+        correct_steps += int(correct)
+        all_correct = all_correct and correct
         feedback = (
             "After this decision the active components are "
             + gen.active_text(executed)
@@ -214,7 +224,45 @@ def replay(gen, encoder, agent, episode):
             ),
         )
         active = executed
-    return torch.stack(losses).mean()
+    avg_nll = torch.stack(losses).mean()
+    if return_stats:
+        return {
+            "loss": avg_nll,
+            "step_em": correct_steps / len(losses),
+            "trajectory_em": float(all_correct),
+            "n_steps": len(losses),
+        }
+    return avg_nll
+
+
+@torch.no_grad()
+def evaluate_onpolicy_dev(gen, encoder, agent, episodes):
+    """Choose checkpoints on actual on-policy DEV states, never training loss.
+
+    This is intentionally a bounded fixed development subset for expensive
+    4B + LoRA pilots. For an official result, run a larger locked DEV split,
+    then one untouched TEST evaluation using the selected checkpoint.
+    """
+    if not episodes:
+        raise ValueError("dev episodes cannot be empty")
+    encoder.model.eval()
+    agent.eval()
+    losses, correct, trajectories, total_steps = 0.0, 0.0, 0.0, 0
+    for episode in episodes:
+        report = replay(gen, encoder, agent, episode, return_stats=True)
+        if not torch.isfinite(report["loss"]).item():
+            raise FloatingPointError("nonfinite on-policy DEV loss")
+        losses += float(report["loss"].detach()) * report["n_steps"]
+        correct += report["step_em"] * report["n_steps"]
+        trajectories += report["trajectory_em"]
+        total_steps += report["n_steps"]
+    return {
+        "step_em": correct / total_steps,
+        "trajectory_em": trajectories / len(episodes),
+        "normalized_set_nll": losses / total_steps,
+        "n_episodes": len(episodes),
+        "n_steps": total_steps,
+    }
 
 
 def _initial(gen, episode):
@@ -237,12 +285,23 @@ def main():
     p.add_argument("--latent-dim", type=int, default=128)
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--limit", type=int, default=0, help="0 = all episodes")
+    p.add_argument("--dev-eval-episodes", type=int, default=12,
+                   help="fixed DEV subset for checkpoint selection; 0 = entire DEV")
+    p.add_argument("--model-identity", default="BCE_S44_FINAL",
+                   help="identifier for the exact pretrained decision model")
+    p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--accumulate-episodes", type=int, default=1)
     p.add_argument("--seed", type=int, default=43)
     p.add_argument("--device", default="cuda")
     p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     args = p.parse_args()
+    if args.limit < 0 or args.dev_eval_episodes < 0 or args.epochs < 1:
+        p.error("limit/eval-limit must be nonnegative; epochs must be positive")
+    if args.accumulate_episodes < 1 or args.grad_clip <= 0 or args.lr <= 0:
+        p.error("invalid gradient accumulation, clipping or learning rate")
+    if args.lora_r < 1 or args.lora_alpha <= 0:
+        p.error("LoRA rank and alpha must be positive")
     try:
         import gen_text_episodes_shift as gen
     except ModuleNotFoundError:
@@ -254,6 +313,20 @@ def main():
     dev = [json.loads(l) for l in args.dev_jsonl.open() if l.strip()]
     for ep in train + dev:
         gen.validate_episode(ep)
+    if not train or not dev:
+        raise ValueError("train and dev episodes must be nonempty")
+    train_ids = [ep["episode_id"] for ep in train]
+    dev_ids = [ep["episode_id"] for ep in dev]
+    if (len(set(train_ids)) != len(train_ids)
+        or len(set(dev_ids)) != len(dev_ids)
+        or set(train_ids) & set(dev_ids)):
+        raise ValueError("train/dev episode IDs must be unique and disjoint")
+    rng = random.Random(args.seed)
+    dev_rng = random.Random(args.seed + 100_003)
+    dev_eval = (
+        dev_rng.sample(dev, min(len(dev), args.dev_eval_episodes))
+        if args.dev_eval_episodes else dev
+    )
 
     modules = json.loads(args.modules.read_text())
     encoder = TrainableQwenEncoder(
@@ -271,51 +344,110 @@ def main():
         inner_steps=args.inner_steps,
     )
     agent = EpisodicSetDecision(config).to(encoder.device)
-    params = list(encoder.parameters()) + list(agent.parameters())
-    optimizer = torch.optim.AdamW([p for p in params if p.requires_grad], lr=args.lr)
-    rng = random.Random(args.seed)
-    args.output.mkdir(parents=True, exist_ok=True)
+    trainable_params = [
+        p for p in list(encoder.parameters()) + list(agent.parameters())
+        if p.requires_grad
+    ]
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.lr)
+    args.output.mkdir(parents=True, exist_ok=False)
+    best = None
+    best_epoch = 0
+    best_dev_metrics = None
+    gradient_report = None
     for epoch in range(args.epochs):
         rng.shuffle(train)
+        encoder.model.train()
         agent.train()
+        optimizer.zero_grad(set_to_none=True)
         total = 0.0
         group = []
-        for index, episode in enumerate(train):
-            loss = replay(gen, encoder, agent, episode)
-            group.append(loss)
-            if len(group) == args.accumulate_episodes:
-                (torch.stack(group).mean()).backward()
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in params if p.requires_grad], 1.0
-                )
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-                total += sum(float(x.detach()) for x in group)
-                group = []
-        if group:
-            (torch.stack(group).mean()).backward()
+
+        def take_optimizer_step(losses):
+            nonlocal gradient_report
+            if not losses:
+                return
+            loss_batch = torch.stack(losses).mean()
+            if not torch.isfinite(loss_batch).item():
+                raise FloatingPointError("nonfinite episodic LoRA training loss")
+            loss_batch.backward()
+            # A backbone LoRA forward which silently bypasses adapters may
+            # still yield gradients for the tiny memory head. Detect that.
+            if gradient_report is None:
+                gradient_report = check_lora_gradients(encoder.model)
+                print(json.dumps({"first_lora_backward": gradient_report}), flush=True)
+            torch.nn.utils.clip_grad_norm_(
+                trainable_params, args.grad_clip, error_if_nonfinite=True
+            )
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-            total += sum(float(x.detach()) for x in group)
-        print(json.dumps({"epoch": epoch + 1, "train_nll": total / len(train)}))
-        torch.save(
-            {
+
+        for episode in train:
+            loss = replay(gen, encoder, agent, episode)
+            group.append(loss)
+            total += float(loss.detach())
+            if len(group) == args.accumulate_episodes:
+                take_optimizer_step(group)
+                group.clear()
+        if group:
+            take_optimizer_step(group)
+            group.clear()
+
+        dev_metrics = evaluate_onpolicy_dev(gen, encoder, agent, dev_eval)
+        record = {
+            "epoch": epoch + 1,
+            "train_normalized_set_nll": total / len(train),
+            "dev_onpolicy": dev_metrics,
+            "dev_selection_metric": "step_em_then_lower_normalized_set_nll",
+        }
+        print(json.dumps(record), flush=True)
+        candidate = (
+            dev_metrics["step_em"],
+            -dev_metrics["normalized_set_nll"],
+        )
+        if best is None or candidate > best:
+            best = candidate
+            best_epoch = epoch + 1
+            best_dev_metrics = dict(dev_metrics)
+            checkpoint = {
                 "schema": "episodic-set-head-v1",
+                "checkpoint_type": "qwen3.5_lora_plus_episodic_head",
                 "config": {
                     "context_dim": encoder.hidden_size,
                     "latent_dim": args.latent_dim,
                     "max_options": len(gen.CELLS),
                     "inner_steps": args.inner_steps,
                 },
-                "model": {k: v.detach().cpu() for k, v in agent.state_dict().items()},
-                "lora": {
-                    k: v.detach().cpu()
-                    for k, v in encoder.model.state_dict().items()
-                    if "lora" in k
+                "model": {
+                    k: v.detach().cpu().clone()
+                    for k, v in agent.state_dict().items()
                 },
-                "model_identity": "BCE_S44_FINAL",
-            },
-            args.output / "best.pt",
+                "lora": lora_tensors(encoder.model),
+                "lora_config": {
+                    "r": encoder.lora_r,
+                    "alpha": encoder.lora_alpha,
+                    "target_modules": encoder.lora_modules,
+                    "dtype": encoder.dtype_name,
+                    "mamba_ssm_dtype": encoder.model_ssm_dtype,
+                    "base_checkpoint": encoder.checkpoint_path,
+                },
+                "model_identity": args.model_identity,
+                "selected_epoch": epoch + 1,
+                "train_episodes": len(train),
+                "dev_selection": dev_metrics,
+                "first_lora_backward": gradient_report,
+            }
+            tmp_path = args.output / "best.pt.tmp"
+            torch.save(checkpoint, tmp_path)
+            tmp_path.replace(args.output / "best.pt")
+        (args.output / "training.json").write_text(
+            json.dumps({
+                "selected_epoch": best_epoch,
+                "last_epoch": epoch + 1,
+                "best_dev_selection": best_dev_metrics,
+                "last_dev_evaluation": dev_metrics,
+                "train_nll_last": total / len(train),
+                "first_lora_backward": gradient_report,
+            }, indent=2) + "\n"
         )
 
 

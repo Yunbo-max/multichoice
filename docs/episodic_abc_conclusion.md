@@ -1,5 +1,7 @@
 # Episodic A/B/C experiments: conclusion — the failure is training scale/mechanism, not offset or frozen features
 
+> **2026-10-26 reproducibility correction:** A LoRA-aware evaluator WAS added after this report (commit `7be558f`), so the older sentence below stating that no evaluator exists is stale. Its adapter restoration and the C trainer's duplicate 4B load / unselected checkpoint were incomplete; see [the LoRA reliability review](episodic_lora_review_and_roadmap_2026-10-26.md). The A/B/C pilot does not causally prove that data scale rather than representation is the only bottleneck. The original results below are preserved as historical records.
+
 Branch: `research/episodic-action-source-diagnostic-20261025`. Date: 2026-10-25.
 Three controlled experiments to isolate why the episodic memory does not encode the
 rule. All reuse the shift-by-k environment (7 cells, 6 rules, horizon 8/12).

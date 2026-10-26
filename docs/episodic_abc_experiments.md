@@ -1,5 +1,7 @@
 # Episodic SetJev A/B/C experiments: the bottleneck is training scale/mechanism, not the representation
 
+> **2026-10-26 interpretation update:** Experiment B is a **single** policy-data aggregation run, not an exhaustive multi-round DAgger test. Experiment C comprises only 200 episodes × 2 epochs and has no verified held-out on-policy LoRA score in this report. Therefore neither expert-action offset nor frozen representations have been ruled out; the evidence only shows that these *particular limited interventions* did not solve the task. See [LoRA reliability review](episodic_lora_review_and_roadmap_2026-10-26.md).
+
 Branch: `research/episodic-action-source-diagnostic-20261025`. Date: 2026-10-25.
 Three controlled experiments on the shift-by-k environment isolate the failure
 mechanism of the episodic memory training.

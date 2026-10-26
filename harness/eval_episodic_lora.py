@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import warnings
 import torch
 
 try:
@@ -19,8 +20,10 @@ except ModuleNotFoundError:
     from harness.eval_episodic_text_online import _generator, evaluate
 try:
     from episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
+    from episodic_lora_checkpoint import load_lora_tensors_verified
 except ModuleNotFoundError:
     from harness.episodic_set_decision import EpisodicSetConfig, EpisodicSetDecision
+    from harness.episodic_lora_checkpoint import load_lora_tensors_verified
 
 
 def main():
@@ -29,33 +32,66 @@ def main():
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--qwen-model", type=Path, required=True)
     p.add_argument("--modules", type=Path, required=True)
+    p.add_argument("--model-identity", default="BCE_S44_FINAL")
+    p.add_argument("--legacy-lora-r", type=int, default=16,
+                   help="only used for checkpoints created before LoRA metadata was saved")
+    p.add_argument("--legacy-lora-alpha", type=int, default=32,
+                   help="only used for legacy checkpoints")
     p.add_argument("--output", type=Path)
+    p.add_argument("--limit", type=int, default=0,
+                   help="positive small value for a quick DEV smoke; zero = all episodes")
     p.add_argument("--device", default="cuda")
     p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     args = p.parse_args()
+    if args.limit < 0:
+        p.error("--limit must be nonnegative")
     if args.output is not None and args.output.exists():
         raise FileExistsError("report already exists")
     episodes = [json.loads(l) for l in args.episodes.open() if l.strip()]
     if not episodes:
         raise ValueError("empty eval set")
+    if args.limit:
+        episodes = episodes[:args.limit]
     schema = episodes[0].get("environment_schema")
     gen = _generator(schema)
     for ep in episodes:
         gen.validate_episode(ep)
 
     saved = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
+    if saved.get("schema") != "episodic-set-head-v1":
+        raise ValueError("unsupported episodic checkpoint schema")
+    if saved.get("model_identity") != args.model_identity:
+        raise ValueError("checkpoint and specified Qwen model identity mismatch")
+    if saved.get("checkpoint_type") not in (
+        None, "qwen3.5_lora_plus_episodic_head"
+    ):
+        raise ValueError("checkpoint type is not LoRA + episodic head")
     modules = json.loads(args.modules.read_text())
-    # lora_r/lora_alpha are not stored; reconstruct the common config (16/32)
+    meta = saved.get("lora_config")
+    if meta is None:
+        warnings.warn(
+            "Legacy checkpoint lacks LoRA rank/alpha metadata; using "
+            "explicit legacy settings and verifying all restored tensors.",
+            RuntimeWarning,
+        )
+        lora_r, lora_alpha = args.legacy_lora_r, args.legacy_lora_alpha
+    else:
+        if sorted(meta.get("target_modules", [])) != sorted(modules):
+            raise ValueError("checkpoint LoRA target_modules differ from eval config")
+        lora_r, lora_alpha = int(meta["r"]), int(meta["alpha"])
+        if meta.get("dtype") != args.dtype:
+            raise ValueError("checkpoint and evaluation precision settings differ")
     encoder = TrainableQwenEncoder(
         args.qwen_model,
         modules=modules,
-        lora_r=16,
-        lora_alpha=32,
+        lora_r=lora_r,
+        lora_alpha=lora_alpha,
         device=args.device,
         dtype=args.dtype,
     )
-    lora_state = {k: v for k, v in saved["lora"].items()}
-    encoder.model.load_state_dict(lora_state, strict=False)
+    restored_tensors = load_lora_tensors_verified(encoder.model, saved["lora"])
+    if meta is not None and str(meta.get("mamba_ssm_dtype")) != encoder.model_ssm_dtype:
+        raise ValueError("LoRA checkpoint SSM compute dtype differs from evaluation")
     encoder.model.eval()
     for param in encoder.model.parameters():
         param.requires_grad_(False)
@@ -68,6 +104,11 @@ def main():
         "checkpoint": str(args.checkpoint),
         "dataset": str(args.episodes),
         "schema": schema,
+        "lora_tensors_verified": restored_tensors,
+        "lora_rank": lora_r,
+        "lora_alpha": lora_alpha,
+        "selected_epoch": saved.get("selected_epoch"),
+        "dev_selection": saved.get("dev_selection"),
         "carry": evaluate(gen, encoder, agent, episodes, mode="carry"),
         "reset_every_step": evaluate(gen, encoder, agent, episodes, mode="reset"),
         "prime_only": evaluate(gen, encoder, agent, episodes, mode="prime_only"),
