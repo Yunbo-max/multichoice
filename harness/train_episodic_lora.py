@@ -318,7 +318,11 @@ def main():
         or set(train_ids) & set(dev_ids)):
         raise ValueError("train/dev episode IDs must be unique and disjoint")
     rng = random.Random(args.seed)
-    dev_eval = rng.sample(dev, min(len(dev), args.dev_eval_episodes)) if args.dev_eval_episodes else dev
+    dev_rng = random.Random(args.seed + 100_003)
+    dev_eval = (
+        dev_rng.sample(dev, min(len(dev), args.dev_eval_episodes))
+        if args.dev_eval_episodes else dev
+    )
 
     modules = json.loads(args.modules.read_text())
     encoder = TrainableQwenEncoder(
@@ -343,6 +347,7 @@ def main():
     optimizer = torch.optim.AdamW(trainable_params, lr=args.lr)
     args.output.mkdir(parents=True, exist_ok=False)
     best = None
+    best_epoch = 0
     gradient_report = None
     for epoch in range(args.epochs):
         rng.shuffle(train)
@@ -396,6 +401,7 @@ def main():
         )
         if best is None or candidate > best:
             best = candidate
+            best_epoch = epoch + 1
             checkpoint = {
                 "schema": "episodic-set-head-v1",
                 "checkpoint_type": "qwen3.5_lora_plus_episodic_head",
@@ -424,12 +430,12 @@ def main():
                 "dev_selection": dev_metrics,
                 "first_lora_backward": gradient_report,
             }
-            torch.save(checkpoint, args.output / "best.pt")
+            tmp_path = args.output / "best.pt.tmp"
+            torch.save(checkpoint, tmp_path)
+            tmp_path.replace(args.output / "best.pt")
         (args.output / "training.json").write_text(
             json.dumps({
-                "selected_epoch": torch.load(
-                    args.output / "best.pt", map_location="cpu", weights_only=True
-                )["selected_epoch"],
+                "selected_epoch": best_epoch,
                 "last_epoch": epoch + 1,
                 "dev_selection": dev_metrics,
                 "train_nll_last": total / len(train),
