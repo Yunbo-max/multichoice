@@ -281,12 +281,23 @@ def main():
     p.add_argument("--latent-dim", type=int, default=128)
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--limit", type=int, default=0, help="0 = all episodes")
+    p.add_argument("--dev-eval-episodes", type=int, default=12,
+                   help="fixed DEV subset for checkpoint selection; 0 = entire DEV")
+    p.add_argument("--model-identity", default="BCE_S44_FINAL",
+                   help="identifier for the exact pretrained decision model")
+    p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--accumulate-episodes", type=int, default=1)
     p.add_argument("--seed", type=int, default=43)
     p.add_argument("--device", default="cuda")
     p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     args = p.parse_args()
+    if args.limit < 0 or args.dev_eval_episodes < 0 or args.epochs < 1:
+        p.error("limit/eval-limit must be nonnegative; epochs must be positive")
+    if args.accumulate_episodes < 1 or args.grad_clip <= 0 or args.lr <= 0:
+        p.error("invalid gradient accumulation, clipping or learning rate")
+    if args.lora_r < 1 or args.lora_alpha <= 0:
+        p.error("LoRA rank and alpha must be positive")
     try:
         import gen_text_episodes_shift as gen
     except ModuleNotFoundError:
@@ -298,6 +309,16 @@ def main():
     dev = [json.loads(l) for l in args.dev_jsonl.open() if l.strip()]
     for ep in train + dev:
         gen.validate_episode(ep)
+    if not train or not dev:
+        raise ValueError("train and dev episodes must be nonempty")
+    train_ids = [ep["episode_id"] for ep in train]
+    dev_ids = [ep["episode_id"] for ep in dev]
+    if (len(set(train_ids)) != len(train_ids)
+        or len(set(dev_ids)) != len(dev_ids)
+        or set(train_ids) & set(dev_ids)):
+        raise ValueError("train/dev episode IDs must be unique and disjoint")
+    rng = random.Random(args.seed)
+    dev_eval = rng.sample(dev, min(len(dev), args.dev_eval_episodes)) if args.dev_eval_episodes else dev
 
     modules = json.loads(args.modules.read_text())
     encoder = TrainableQwenEncoder(
@@ -315,51 +336,105 @@ def main():
         inner_steps=args.inner_steps,
     )
     agent = EpisodicSetDecision(config).to(encoder.device)
-    params = list(encoder.parameters()) + list(agent.parameters())
-    optimizer = torch.optim.AdamW([p for p in params if p.requires_grad], lr=args.lr)
-    rng = random.Random(args.seed)
-    args.output.mkdir(parents=True, exist_ok=True)
+    trainable_params = [
+        p for p in list(encoder.parameters()) + list(agent.parameters())
+        if p.requires_grad
+    ]
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.lr)
+    args.output.mkdir(parents=True, exist_ok=False)
+    best = None
+    gradient_report = None
     for epoch in range(args.epochs):
         rng.shuffle(train)
+        encoder.model.train()
         agent.train()
+        optimizer.zero_grad(set_to_none=True)
         total = 0.0
         group = []
-        for index, episode in enumerate(train):
-            loss = replay(gen, encoder, agent, episode)
-            group.append(loss)
-            if len(group) == args.accumulate_episodes:
-                (torch.stack(group).mean()).backward()
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in params if p.requires_grad], 1.0
-                )
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-                total += sum(float(x.detach()) for x in group)
-                group = []
-        if group:
-            (torch.stack(group).mean()).backward()
+
+        def take_optimizer_step(losses):
+            nonlocal gradient_report
+            if not losses:
+                return
+            loss_batch = torch.stack(losses).mean()
+            if not torch.isfinite(loss_batch).item():
+                raise FloatingPointError("nonfinite episodic LoRA training loss")
+            loss_batch.backward()
+            # A backbone LoRA forward which silently bypasses adapters may
+            # still yield gradients for the tiny memory head. Detect that.
+            if gradient_report is None:
+                gradient_report = check_lora_gradients(encoder.model)
+                print(json.dumps({"first_lora_backward": gradient_report}), flush=True)
+            torch.nn.utils.clip_grad_norm_(
+                trainable_params, args.grad_clip, error_if_nonfinite=True
+            )
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-            total += sum(float(x.detach()) for x in group)
-        print(json.dumps({"epoch": epoch + 1, "train_nll": total / len(train)}))
-        torch.save(
-            {
+
+        for episode in train:
+            loss = replay(gen, encoder, agent, episode)
+            group.append(loss)
+            total += float(loss.detach())
+            if len(group) == args.accumulate_episodes:
+                take_optimizer_step(group)
+                group.clear()
+        if group:
+            take_optimizer_step(group)
+            group.clear()
+
+        dev_metrics = evaluate_onpolicy_dev(gen, encoder, agent, dev_eval)
+        record = {
+            "epoch": epoch + 1,
+            "train_normalized_set_nll": total / len(train),
+            "dev_onpolicy": dev_metrics,
+            "dev_selection_metric": "step_em_then_lower_normalized_set_nll",
+        }
+        print(json.dumps(record), flush=True)
+        candidate = (
+            dev_metrics["step_em"],
+            -dev_metrics["normalized_set_nll"],
+        )
+        if best is None or candidate > best:
+            best = candidate
+            checkpoint = {
                 "schema": "episodic-set-head-v1",
+                "checkpoint_type": "qwen3.5_lora_plus_episodic_head",
                 "config": {
                     "context_dim": encoder.hidden_size,
                     "latent_dim": args.latent_dim,
                     "max_options": len(gen.CELLS),
                     "inner_steps": args.inner_steps,
                 },
-                "model": {k: v.detach().cpu() for k, v in agent.state_dict().items()},
-                "lora": {
-                    k: v.detach().cpu()
-                    for k, v in encoder.model.state_dict().items()
-                    if "lora" in k
+                "model": {
+                    k: v.detach().cpu().clone()
+                    for k, v in agent.state_dict().items()
                 },
-                "model_identity": "BCE_S44_FINAL",
-            },
-            args.output / "best.pt",
+                "lora": lora_tensors(encoder.model),
+                "lora_config": {
+                    "r": encoder.lora_r,
+                    "alpha": encoder.lora_alpha,
+                    "target_modules": encoder.lora_modules,
+                    "dtype": encoder.dtype_name,
+                    "mamba_ssm_dtype": encoder.model_ssm_dtype,
+                    "base_checkpoint": encoder.checkpoint_path,
+                },
+                "model_identity": args.model_identity,
+                "selected_epoch": epoch + 1,
+                "train_episodes": len(train),
+                "dev_selection": dev_metrics,
+                "first_lora_backward": gradient_report,
+            }
+            torch.save(checkpoint, args.output / "best.pt")
+        (args.output / "training.json").write_text(
+            json.dumps({
+                "selected_epoch": torch.load(
+                    args.output / "best.pt", map_location="cpu", weights_only=True
+                )["selected_epoch"],
+                "last_epoch": epoch + 1,
+                "dev_selection": dev_metrics,
+                "train_nll_last": total / len(train),
+                "first_lora_backward": gradient_report,
+            }, indent=2) + "\n"
         )
 
 
