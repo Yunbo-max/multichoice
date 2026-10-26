@@ -5,6 +5,7 @@ Run:
 """
 from __future__ import annotations
 
+import inspect
 import random
 import unittest
 
@@ -16,7 +17,7 @@ from harness.episodic_lora_checkpoint import (
     load_lora_tensors_verified,
     lora_tensors,
 )
-from harness.train_episodic_lora import evaluate_onpolicy_dev
+from harness.train_episodic_lora import TrainableQwenEncoder, evaluate_onpolicy_dev
 from harness.episodic_set_decision import EpisodicSetDecision, EpisodicSetConfig
 from harness import gen_text_episodes_shift as gen
 
@@ -92,6 +93,14 @@ class FakeEncoder:
 
     def encode_observation(self, text):
         return torch.zeros(1, 8)
+
+
+class LoaderIntegrityTests(unittest.TestCase):
+    def test_qwen_base_is_loaded_exactly_once(self):
+        implementation = inspect.getsource(TrainableQwenEncoder.__init__)
+        self.assertEqual(
+            implementation.count("self.model = cls.from_pretrained("), 1
+        )
 
 
 class DevSelectionTests(unittest.TestCase):
