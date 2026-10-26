@@ -42,7 +42,18 @@ except ModuleNotFoundError:
 
 
 @torch.no_grad()
-def collect_probe(gen, encoder, agent, episodes):
+def collect_probe(gen, encoder, agent, episodes, *, action_source="policy"):
+    """Capture causal memory states under an explicit action source.
+
+    expert: execute the true current-rule action (imitates offline logged
+            oracle trajectories; action itself reveals the hidden rule).
+    policy: execute the agent's predicted set as in on-policy evaluation.
+
+    A decision never sees gold or the next rule before acting. This routine is
+    for evaluation only; expert action is supplied to observe AFTER deciding.
+    """
+    if action_source not in ("expert", "policy"):
+        raise ValueError("action_source must be expert or policy")
     memories, labels, switched, episode_ids = [], [], [], []
     for episode in episodes:
         episode_id = episode.get("episode_id")
@@ -73,7 +84,8 @@ def collect_probe(gen, encoder, agent, episodes):
             idx = set_map(
                 final["scores"][0, :k], final["correction"][0, : k + 1], support
             )["indices"]
-            executed = [int(i in idx) for i in range(k)]
+            predicted = [int(i in idx) for i in range(k)]
+            executed = list(gold) if action_source == "expert" else predicted
             # Rebuild the causally available feedback, INCLUDING the rule-change
             # demonstration disclosed after this action (the environment may have
             # switched the rule here; the memory must be able to ingest it).
@@ -134,6 +146,8 @@ def main():
     p.add_argument("--episodes", type=Path, required=True)
     p.add_argument("--probe-fit-episodes", type=Path,
                    help="independent DEV episode logs for probe fitting; --episodes stays untouched TEST")
+    p.add_argument("--compare-action-sources", action="store_true",
+                   help="fit on DEV expert states, test the SAME probe on matched TEST expert vs policy states")
     p.add_argument("--head", type=Path, required=True)
     p.add_argument("--qwen-model", type=Path, required=True)
     p.add_argument("--model-identity", required=True)
@@ -154,6 +168,8 @@ def main():
         if episode.get("environment_schema") != schema:
             raise ValueError("mixed evaluation schemas")
         gen.validate_episode(episode)
+    if args.compare_action_sources and args.probe_fit_episodes is None:
+        p.error("--compare-action-sources requires --probe-fit-episodes DEV.jsonl")
     fitting_episodes = None
     if args.probe_fit_episodes is not None:
         fitting_episodes = [
@@ -225,6 +241,60 @@ def main():
     predicted = counterfactual(gen, encoder, agent, state)
     cf_correct = {k: (predicted[k] == shift(state, k)) for k in predicted}
 
+    action_source_diagnostic = None
+    if args.compare_action_sources:
+        # The two TEST cohorts are paired by episode and current hidden rule.
+        # The ONLY difference is whether past executed actions were oracle
+        # actions or the policy's own predictions. The same probe is evaluated
+        # on both cohorts without re-fitting on any TEST data.
+        fit_expert_mem, fit_expert_labels, _, fit_expert_ids = collect_probe(
+            gen, encoder, agent, fitting_episodes, action_source="expert"
+        )
+        test_expert_mem, expert_labels, _, expert_ids = collect_probe(
+            gen, encoder, agent, episodes, action_source="expert"
+        )
+        if labels != expert_labels or episode_ids != expert_ids:
+            raise RuntimeError("expert/policy trajectories must align on TEST rule timeline")
+        expert_probe, expert_train_acc = fit_probe(
+            fit_expert_mem, fit_expert_labels, n_classes=n_classes,
+        )
+        expert_preds = probe_predictions(expert_probe, test_expert_mem)
+        policy_preds = probe_predictions(expert_probe, memories)
+        # Exclude first decision: both modes have exactly the same primed state.
+        seen = set()
+        later = []
+        for i, episode_id in enumerate(episode_ids):
+            if episode_id in seen:
+                later.append(i)
+            seen.add(episode_id)
+
+        def accuracy(indices, predictions):
+            if not indices:
+                return None
+            return sum(int(predictions[i] == labels[i]) for i in indices) / len(indices)
+
+        test_indices = list(range(len(labels)))
+        switched_later = [i for i in later if switched[i]]
+        stable_later = [i for i in later if not switched[i]]
+        action_source_diagnostic = {
+            "probe_fit": "EXPERT trajectories on DEV episodes (frozen)",
+            "n_dev_episodes": len(set(fit_expert_ids)),
+            "n_test_episodes": len(set(episode_ids)),
+            "expert_fit_accuracy": expert_train_acc,
+            "test_expert_accuracy": accuracy(test_indices, expert_preds),
+            "test_policy_accuracy": accuracy(test_indices, policy_preds),
+            "test_expert_later_accuracy": accuracy(later, expert_preds),
+            "test_policy_later_accuracy": accuracy(later, policy_preds),
+            "test_expert_after_switch": accuracy(switched_later, expert_preds),
+            "test_policy_after_switch": accuracy(switched_later, policy_preds),
+            "test_expert_stable_later": accuracy(stable_later, expert_preds),
+            "test_policy_stable_later": accuracy(stable_later, policy_preds),
+            "n_later_steps": len(later),
+            "n_after_switch_steps": len(switched_later),
+            "n_stable_later_steps": len(stable_later),
+            "note": "The expert rollout inputs contain past correct executed actions, which are extra information absent from a mistaken on-policy rollout; differences measure history distribution shift, not exclusively forgetting.",
+        }
+
     report = {
         "head": str(args.head),
         "dataset": str(args.episodes),
@@ -247,6 +317,7 @@ def main():
             "no_switch_test_steps": sum(int(not switched[i]) for i in split["test_indices"]),
             "note": "post-switch and no-switch accuracy use the SAME probe trained on disjoint episodes",
         },
+        "action_source_diagnostic": action_source_diagnostic,
         "counterfactual": {
             "state": gen.state_text(state),
             "summary": counterfactual_summary(predicted),

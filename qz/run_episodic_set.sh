@@ -13,6 +13,7 @@ case "$STAGE" in
     "$PY" -m unittest discover -s tests -p 'test_episodic_online.py' -v
     "$PY" -m unittest discover -s tests -p 'test_episodic_identifiability.py' -v
     "$PY" -m unittest discover -s tests -p 'test_memory_probe_episode_split.py' -v
+    "$PY" -m unittest discover -s tests -p 'test_action_source_diagnostic.py' -v
     ;;
   toy)
     SEED="${SEED:-43}"
