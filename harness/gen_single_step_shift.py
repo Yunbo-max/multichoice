@@ -54,6 +54,11 @@ def main():
     p.add_argument("--train-output", type=Path, required=True)
     p.add_argument("--test-output", type=Path, required=True)
     p.add_argument("--test-fraction", type=float, default=0.2)
+    p.add_argument(
+        "--split-mode",
+        choices=["random", "unseen_state", "unseen_rule"],
+        default="random",
+    )
     p.add_argument("--seed", type=int, default=43)
     args = p.parse_args()
 
@@ -63,11 +68,24 @@ def main():
     combos = [(s, k) for s in states for k in range(1, N)]
     assert len(combos) == 126, len(combos)
 
-    rng = random.Random(args.seed)
-    rng.shuffle(combos)
-    n_test = int(len(combos) * args.test_fraction)
-    test_combos = combos[:n_test]
-    train_combos = combos[n_test:]
+    if args.split_mode == "random":
+        rng = random.Random(args.seed)
+        rng.shuffle(combos)
+        n_test = int(len(combos) * args.test_fraction)
+        test_combos = combos[:n_test]
+        train_combos = combos[n_test:]
+    elif args.split_mode == "unseen_state":
+        # Hold out whole STATES (all 6 rules) so the shift must transfer to new
+        # active sets never seen in training.
+        n_holdout = 6
+        held = {tuple(s) for s in states[:n_holdout]}
+        train_combos = [(s, k) for s, k in combos if tuple(s) not in held]
+        test_combos = [(s, k) for s, k in combos if tuple(s) in held]
+    else:  # unseen_rule
+        # Hold out rule k=6 entirely: the model must infer a never-seen shift
+        # from the demonstration alone.
+        train_combos = [(s, k) for s, k in combos if k != N - 1]
+        test_combos = [(s, k) for s, k in combos if k == N - 1]
 
     for path, subset in (
         (args.train_output, train_combos),
