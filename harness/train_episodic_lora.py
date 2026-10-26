@@ -60,7 +60,9 @@ class TrainableQwenEncoder:
             self.tokenizer.encode(s, add_special_tokens=False)[0] for s in self.labels
         ]
         cfg = AutoConfig.from_pretrained(checkpoint, local_files_only=True)
-        if dtype == "bf16" and getattr(cfg, "mamba_ssm_dtype", None) == "float32":
+        if dtype == "bf16" and str(getattr(cfg, "mamba_ssm_dtype", None)) in (
+            "float32", "torch.float32"
+        ):
             cfg.mamba_ssm_dtype = "bfloat16"
         self.model_ssm_dtype = str(getattr(cfg, "mamba_ssm_dtype", None))
         cls = (
