@@ -78,6 +78,10 @@ def main():
             raise FileExistsError(f"output already exists: {path}")
         with path.open("w", encoding="utf-8") as f:
             for state, k in subset:
+                target = shift_set(state, k)
+                gold_letters = "".join(
+                    chr(ord("a") + i) for i, bit in enumerate(target) if bit
+                )
                 row = {
                     "id": f"shift-step-{active_text(state).replace(', ', '-')}-k{k}",
                     "source": "shift_single_step",
@@ -91,7 +95,9 @@ def main():
                         + ". Which components should be active now?"
                     ),
                     "options": options_block(),
-                    "target": shift_set(state, k),
+                    "target": target,
+                    "n_options": N,
+                    "gold_letters": gold_letters,
                     "selection_mode": "multi",
                     "allow_empty": False,
                 }
