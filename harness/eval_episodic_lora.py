@@ -90,6 +90,8 @@ def main():
         dtype=args.dtype,
     )
     restored_tensors = load_lora_tensors_verified(encoder.model, saved["lora"])
+    if meta is not None and str(meta.get("mamba_ssm_dtype")) != encoder.model_ssm_dtype:
+        raise ValueError("LoRA checkpoint SSM compute dtype differs from evaluation")
     encoder.model.eval()
     for param in encoder.model.parameters():
         param.requires_grad_(False)
