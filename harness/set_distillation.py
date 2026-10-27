@@ -465,6 +465,7 @@ def set_loss_terms(
     loss_family="set_ce",
     count_weight=1.0,
     count_anchor=False,
+    count_anchor_detach=False,
 ):
     """Per-row set objective, raw-score BCE diagnostic, and unweighted count CE/K.
 
@@ -479,6 +480,8 @@ def set_loss_terms(
     the explicit marginal-only ablation, not an incoherent set target.
     """
     validate_set_loss_options(loss_family, count_weight, count_target)
+    if count_anchor_detach and not count_anchor:
+        raise ValueError("count_anchor_detach requires count_anchor")
     import torch
     import torch.nn.functional as F
 
@@ -492,7 +495,10 @@ def set_loss_terms(
         index = torch.tensor(support, dtype=torch.long, device=scores.device)
         head = count_logits[i, : k + 1].float()
         if count_anchor:
-            head = torch_count_anchor_logits(scores, head)
+            # Forward-identical control: isolate count-to-membership gradient.
+            # The conditional within-count set likelihood still has gradients.
+            anchor_scores = scores.detach() if count_anchor_detach else scores
+            head = torch_count_anchor_logits(anchor_scores, head)
         log_count = F.log_softmax(head[index], dim=0)
         bce = F.binary_cross_entropy_with_logits(scores, q, reduction="mean")
         if count_target == "gold":

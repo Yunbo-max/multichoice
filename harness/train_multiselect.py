@@ -1363,6 +1363,10 @@ def main():
         "correction cold-starts from the candidate-score-implied count distribution",
     )
     parser.add_argument(
+        "--count-anchor-detach", action="store_true",
+        help="identical forward anchored count probabilities; detach score gradients through log Z_m",
+    )
+    parser.add_argument(
         "--allow-legacy-targets",
         action="store_true",
         help="explicit BCE-only diagnostic override for old untyped target files",
@@ -1424,6 +1428,8 @@ def main():
         )
     if args.objective != "set" and args.count_anchor:
         parser.error("--count-anchor requires --objective set")
+    if args.count_anchor_detach and not args.count_anchor:
+        parser.error("--count-anchor-detach requires --count-anchor")
     if args.objective == "bce" and args.count_target != "teacher":
         parser.error(
             "--count-target gold is a set-head ablation and requires --objective set"
@@ -1576,6 +1582,8 @@ def main():
                 "resume checkpoint count-anchor mode disagrees with --count-anchor; "
                 "use matching mode or start a new (non-resume) experiment"
             )
+        if bool(previous_loss.get("count_anchor_detach", False)) != args.count_anchor_detach:
+            raise ValueError("resume checkpoint count-anchor-detach mismatch")
 
     output = Path(args.output)
     if rank == 0:
@@ -1616,6 +1624,7 @@ def main():
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
                 "count_anchor": args.count_anchor,
+                        "count_anchor_detach": args.count_anchor_detach,
                 "gold_weight": args.gold_weight,
                 "allow_legacy_targets": args.allow_legacy_targets,
                 "lambda_g": args.lambda_g,
@@ -1911,6 +1920,7 @@ def main():
                             "count_weight": args.count_weight,
                             "count_target": args.count_target,
                             "count_anchor": args.count_anchor,
+                        "count_anchor_detach": args.count_anchor_detach,
                         },
                     )
                 tokenizer.save_pretrained(destination)
@@ -1930,6 +1940,7 @@ def main():
                         "count_weight": args.count_weight,
                         "count_target": args.count_target,
                         "count_anchor": args.count_anchor,
+                        "count_anchor_detach": args.count_anchor_detach,
                     },
                 )
         torch.distributed.barrier()
@@ -1965,6 +1976,7 @@ def main():
                     loss_family=args.set_loss,
                     count_weight=args.count_weight,
                     count_anchor=args.count_anchor,
+                    count_anchor_detach=args.count_anchor_detach,
                 )
             else:
                 losses, bces, graphs = loss_terms(
@@ -2141,6 +2153,7 @@ def main():
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
                 "count_anchor": args.count_anchor,
+                        "count_anchor_detach": args.count_anchor_detach,
                 "gold_weight": args.gold_weight,
             },
         )
