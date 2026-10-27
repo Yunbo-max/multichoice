@@ -37,7 +37,7 @@ def audit_run(spec):
             raise ValueError(f"{spec['id']} configuration {key} mismatch")
     if config["objective"]!=spec["objective"] or config["seed"]!=spec["seed"]:
         raise ValueError(f"{spec['id']} objective/seed mismatch")
-    if Path(config["model"])!=Path(spec["model"]):
+    if Path(config["model"]).resolve()!=Path(spec["model"]).resolve():
         raise ValueError(f"{spec['id']} model/checkpoint mismatch")
     for kind,key in (("train","train_sha256"),("dev","dev_sha256"),
                      ("modules","module_sha256")):
