@@ -1,0 +1,47 @@
+{
+  "schema": "static_setjev_model_registry_v1",
+  "verified_family": "Qwen3.5",
+  "entrypoints": [
+    {
+      "hf_id": "Qwen/Qwen3.5-0.8B",
+      "size": "0.8B",
+      "backbone_status": "verified_on_huggingface",
+      "bce_checkpoint": "REQUIRED_TO_TRAIN",
+      "modules_manifest": "REQUIRED_PER_ARCH",
+      "primary": false,
+      "resource": "pilot 1xH100 or lower-cost GPU"
+    },
+    {
+      "hf_id": "Qwen/Qwen3.5-2B",
+      "size": "2B",
+      "backbone_status": "verified_on_huggingface",
+      "bce_checkpoint": "REQUIRED_TO_TRAIN",
+      "modules_manifest": "REQUIRED_PER_ARCH",
+      "primary": false,
+      "resource": "1xH100"
+    },
+    {
+      "hf_id": "Qwen/Qwen3.5-4B",
+      "size": "4B",
+      "backbone_status": "verified_on_huggingface",
+      "bce_checkpoint": "runs/qz/grouped_bce_4gpu_s44/v1/final",
+      "modules_manifest": "innerjev/configs/4B/modules.json",
+      "primary": true,
+      "resource": "4xH100 full rank matched continuing experiment"
+    },
+    {
+      "hf_id": "Qwen/Qwen3.5-9B",
+      "size": "9B",
+      "backbone_status": "verified_on_huggingface",
+      "bce_checkpoint": "REQUIRED_TO_TRAIN",
+      "modules_manifest": "REQUIRED_PER_ARCH",
+      "primary": false,
+      "resource": "4-8xH100 subject to real memory profile"
+    }
+  ],
+  "notes": [
+    "Never share 4B module manifests or 4B checkpoints with other model sizes.",
+    "For each additional size first establish matched hard BCE checkpoint, then use paired continuation arms.",
+    "Research registry does not mean GPU experiments are scheduled or run."
+  ]
+}

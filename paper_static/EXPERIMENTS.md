@@ -51,3 +51,14 @@ From a QZ checkout containing full checkpoint weights:
     python paper_static/plan_experiments.py --output paper_static/runs_4b.jsonl
     python -m unittest tests.test_static_anchor_gradient tests.test_static_plan -v
 This creates a manifest with exact argv and SHA hashes if local files exist; submit selected argv on your real compute environment. A 4B module list is required. Generation does not start training and no new GPU results are claimed.
+
+## Automated provenance and summary aggregation
+A read-only post-run audit now exists:
+    python paper_static/collect_results.py --manifest paper_static/runs_4b.jsonl --output paper_static/results_4b.json --require-all
+It reads training_config.json, training_complete.json and the terminal
+validation_STEP.json for each manifest row, checks SHA256, model identity,
+optimizer steps and the detach mode, then reports mean/std and paired seed
+differences without manufacturing missing metrics or treating DEV as TEST.
+Model scaling preconditions are in paper_static/model_registry.json; only 4B is
+currently configured as a ready warm-start experiment. Fresh model-size BCE
+checkpoints and module manifests must be produced before 0.8B/2B/9B runs.
