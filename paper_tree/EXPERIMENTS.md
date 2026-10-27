@@ -125,3 +125,15 @@ G5: only after G4 demonstrates benefit, integrate visual ARC-AGI-3.
 
 ## Data safety follow-up (2026-10-27)
 Oracle data now uses canonical wall/goal board geometry under dihedral rotations/reflections as the group_id (not merely an arbitrary level ID). Same-layout differently seeded states cannot cross train/DEV. The official Valen group_id remains the authoritative grouping for its image records. The visual SFT path uses the multimodal Qwen3.5 processor for image pixel tensors, then appends the answer cue to input_ids/attention_mask before selecting the native A/B/C/D logits.
+
+## Executable Stage 2/3 symbolic learned-search control
+The following scripts are CPU-capable, independent of the 4B visual branch:
+    python -m treejev.train_grid_policy --train runs/tree/oracle/train_multi.jsonl --dev runs/tree/oracle/dev_multi.jsonl --output runs/tree/grid_s43 --epochs 10 --seed 43
+    python -m treejev.eval_grid_beam --checkpoint runs/tree/grid_s43/best.pt --maps data/heldout_ascii_levels.jsonl --output runs/tree/grid_beam_eval.json --widths 1 2 4 8 --node-budget 128
+    python -m unittest tests.test_tree_grid_model -v
+This is an initial learned policy and remaining-step regression baseline; it uses the
+TRUE Sokoban simulator inside search. It is not a learned world model, a
+trained 4B branching controller, or a legal live ARC-AGI-3 search. No evaluation
+should mix held-out layouts with train/dev. Value training only on optimal-DAG
+states lacks certified off-path negatives; add solver-labeled recovery states
+and matched best-first/A* controls before claiming learned branching gains.
