@@ -55,6 +55,9 @@ def first_token_logits(model, processor, row, device, *, bf16):
     features["input_ids"]=torch.cat((features["input_ids"],cue),dim=1)
     features["attention_mask"]=torch.cat((features["attention_mask"],
                              torch.ones_like(cue)),dim=1)
+    if "mm_token_type_ids" in features:
+        features["mm_token_type_ids"]=torch.cat((features["mm_token_type_ids"],
+                             torch.zeros_like(cue)),dim=1)
     features={k:(v.to(device=device,dtype=torch.bfloat16 if bf16 else torch.float32)
                  if v.is_floating_point() else v.to(device)) for k,v in features.items()}
     logits=model(**features,use_cache=False).logits[0,-1]

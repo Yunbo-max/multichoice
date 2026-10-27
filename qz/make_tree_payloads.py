@@ -70,7 +70,8 @@ def _env():
 def _stage1(name, desc, seed, limit, dev_limit, max_steps, out):
     command = (
         _env()
-        + f'mkdir -p "{R}/logs/qz" "{out}"\n'
+        + f'rm -rf "{out}"\n'
+        + f'mkdir -p "{R}/logs/qz"\n'
         + f'cd "{R}"\n'
         + f'"{V}/bin/python" -m treejev.train_visual_action '
         + f'--train "{TRAIN}" --dev "{DEV}" '
