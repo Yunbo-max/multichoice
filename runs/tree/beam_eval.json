@@ -1,0 +1,56 @@
+{
+  "results": [
+    {
+      "level_id": "held_l4",
+      "width": 1,
+      "won": false,
+      "steps": 0,
+      "expanded_nodes": 24,
+      "node_budget": 64
+    },
+    {
+      "level_id": "held_l4",
+      "width": 2,
+      "won": false,
+      "steps": 0,
+      "expanded_nodes": 47,
+      "node_budget": 64
+    },
+    {
+      "level_id": "held_l4",
+      "width": 4,
+      "won": false,
+      "steps": 0,
+      "expanded_nodes": 64,
+      "node_budget": 64
+    },
+    {
+      "level_id": "held_z5",
+      "width": 1,
+      "won": false,
+      "steps": 0,
+      "expanded_nodes": 24,
+      "node_budget": 64
+    },
+    {
+      "level_id": "held_z5",
+      "width": 2,
+      "won": false,
+      "steps": 0,
+      "expanded_nodes": 47,
+      "node_budget": 64
+    },
+    {
+      "level_id": "held_z5",
+      "width": 4,
+      "won": false,
+      "steps": 0,
+      "expanded_nodes": 64,
+      "node_budget": 64
+    }
+  ],
+  "source": "/tmp/opencode/tree_maps_heldout.jsonl",
+  "checkpoint": "runs/tree/grid_policy/best.pt",
+  "uses_exact_simulator": true,
+  "valid_arc3_eval": false
+}

@@ -1,0 +1,51 @@
+{
+  "certified_labels_only": true,
+  "dev_states": 9,
+  "kind": "certified_shortest_dag",
+  "official_test_touched": false,
+  "skipped": [],
+  "solved_levels": [
+    {
+      "complete_shortest_dag": true,
+      "distance": 3,
+      "level_id": "demo",
+      "optimal_states": 4,
+      "sampled_paths": 2,
+      "solved_paths_capped": 2
+    },
+    {
+      "complete_shortest_dag": true,
+      "distance": 2,
+      "level_id": "line2",
+      "optimal_states": 2,
+      "sampled_paths": 1,
+      "solved_paths_capped": 1
+    },
+    {
+      "complete_shortest_dag": true,
+      "distance": 5,
+      "level_id": "corner3",
+      "optimal_states": 9,
+      "sampled_paths": 2,
+      "solved_paths_capped": 2
+    },
+    {
+      "complete_shortest_dag": true,
+      "distance": 6,
+      "level_id": "zig4",
+      "optimal_states": 11,
+      "sampled_paths": 3,
+      "solved_paths_capped": 3
+    },
+    {
+      "complete_shortest_dag": true,
+      "distance": 5,
+      "level_id": "pushdown",
+      "optimal_states": 9,
+      "sampled_paths": 2,
+      "solved_paths_capped": 2
+    }
+  ],
+  "total_paths": 10,
+  "train_states": 26
+}
