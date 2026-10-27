@@ -23,7 +23,8 @@ METRICS = ("question_em","f1","bce","membership_brier","count_nll",
 def audit_run(spec):
     root=Path(spec["output"])
     if not (root/"training_complete.json").exists():
-        return {"id":spec["id"],"status":"NOT_RUN"}
+        return {"id":spec["id"],"status":"NOT_RUN",
+                "arm":spec["arm"],"seed":spec["seed"],"model_tag":spec["model_tag"]}
     completed=json.loads((root/"training_complete.json").read_text())
     config=json.loads((root/"training_config.json").read_text())
     if int(completed["steps"])!=int(spec["update_budget"]):
