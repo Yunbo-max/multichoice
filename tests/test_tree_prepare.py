@@ -23,9 +23,11 @@ class PrepareTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             home=Path(t)
             source=home/"levels.jsonl"
-            # Same layout but two IDs is for split smoke only, NOT a real independent game evaluation.
+            # Different board geometries are needed for independent groups.
+            second=list(DEMO_MAP)
+            second[3]="#    ##"
             save_jsonl(source,[{"level_id":"a","ascii":DEMO_MAP},
-                               {"level_id":"b","ascii":DEMO_MAP}])
+                               {"level_id":"b","ascii":second}])
             out=home/"split"
             prepare(["oracle","--maps",str(source),"--output-dir",str(out),
                      "--dev-fraction","0.5"])

@@ -87,9 +87,9 @@ def main(argv=None):
         save_jsonl(args.output_dir/"train_multi.jsonl",train)
         save_jsonl(args.output_dir/"dev_multi.jsonl",dev)
         save_jsonl(args.output_dir/"trajectories_train.jsonl",
-                   [r for r in trajectories if r["level_id"] not in dev_groups])
+                   [r for r in trajectories if r["group_id"] not in dev_groups])
         save_jsonl(args.output_dir/"trajectories_dev.jsonl",
-                   [r for r in trajectories if r["level_id"] in dev_groups])
+                   [r for r in trajectories if r["group_id"] in dev_groups])
         summary={"kind":"certified_shortest_dag","train_states":len(train),
                  "dev_states":len(dev),"total_paths":len(trajectories),
                  "solved_levels":solved,"skipped":skipped,

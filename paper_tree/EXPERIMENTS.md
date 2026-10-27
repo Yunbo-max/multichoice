@@ -122,3 +122,6 @@ soft CE versus one sampled expert. Keep official 100 game test sealed.
 G3: Qwen action SFT plus value ranking on *verified* off-path alternatives.
 G4: learned branching under matched expanded-node budgets.
 G5: only after G4 demonstrates benefit, integrate visual ARC-AGI-3.
+
+## Data safety follow-up (2026-10-27)
+Oracle data now uses canonical wall/goal board geometry under dihedral rotations/reflections as the group_id (not merely an arbitrary level ID). Same-layout differently seeded states cannot cross train/DEV. The official Valen group_id remains the authoritative grouping for its image records. The visual SFT path uses the multimodal Qwen3.5 processor for image pixel tensors, then appends the answer cue to input_ids/attention_mask before selecting the native A/B/C/D logits.

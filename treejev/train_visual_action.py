@@ -41,13 +41,20 @@ def first_token_logits(model, processor, row, device, *, bf16):
     image_path=Path(row["image_path"])
     with Image.open(image_path) as raw:
         image=raw.convert("RGB")
+    # Follow the official Qwen3.5 multimodal processor path. The PIL image
+    # becomes pixel_values and image_grid_thw within the returned batch.
     messages=[{"role":"user","content":[
-        {"type":"image"},{"type":"text","text":PROMPT}]}]
-    prompt=processor.apply_chat_template(
-        messages,tokenize=False,add_generation_prompt=True,
-        enable_thinking=False
-    )+"The correct answer is ("
-    features=processor(text=[prompt],images=[image],return_tensors="pt")
+        {"type":"image","image":image},{"type":"text","text":PROMPT}]}]
+    features=processor.apply_chat_template(
+        messages,tokenize=True,add_generation_prompt=True,
+        return_dict=True,return_tensors="pt",enable_thinking=False)
+    # Append a known answer cue after the multimodal template so that next
+    # token logits score A/B/C/D directly without generating textual CoT.
+    cue=processor.tokenizer("The correct answer is (",
+            add_special_tokens=False,return_tensors="pt")["input_ids"]
+    features["input_ids"]=torch.cat((features["input_ids"],cue),dim=1)
+    features["attention_mask"]=torch.cat((features["attention_mask"],
+                             torch.ones_like(cue)),dim=1)
     features={k:(v.to(device=device,dtype=torch.bfloat16 if bf16 else torch.float32)
                  if v.is_floating_point() else v.to(device)) for k,v in features.items()}
     logits=model(**features,use_cache=False).logits[0,-1]

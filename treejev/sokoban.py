@@ -101,3 +101,34 @@ DEMO_MAP = (
     "#     #",
     "#######",
 )
+
+def canonical_layout_group(board: Board):
+    """Group layouts modulo rotations/reflections of walls and goals.
+
+    Player/box locations and language variants of the same game must stay in
+    one train or DEV split. Full-game evaluation uses separate official layouts.
+    """
+    import hashlib
+    import json
+    candidates=[]
+    for rot in range(4):
+        hh, ww = ((board.height, board.width) if rot%2==0
+                  else (board.width, board.height))
+        def rotate(index):
+            r,c=divmod(index,board.width)
+            if rot==0: return r,c
+            if rot==1: return c,board.height-1-r
+            if rot==2: return board.height-1-r,board.width-1-c
+            return board.width-1-c,r
+        for mirror in (False,True):
+            def indices(cells):
+                values=[]
+                for pos in cells:
+                    rr,cc=rotate(pos)
+                    if mirror: cc=ww-1-cc
+                    values.append(rr*ww+cc)
+                return tuple(sorted(values))
+            candidates.append((hh,ww,indices(board.walls),indices(board.goals)))
+    canonical=min(candidates)
+    payload=json.dumps(canonical,separators=(",",":"))
+    return "layout-"+hashlib.sha256(payload.encode()).hexdigest()[:24]

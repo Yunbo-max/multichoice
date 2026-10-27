@@ -9,7 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 import json
 import random
-from treejev.sokoban import ACTION_ORDER
+from treejev.sokoban import ACTION_ORDER, canonical_layout_group
 from treejev.oracle import shortest_path_dag
 
 OPTION_DESCRIPTIONS = {"up":"Move Up", "right":"Move Right",
@@ -109,7 +109,7 @@ def as_multiselect_row(board, state, optimal, level_id, depth, remaining, split)
     key=sha256((str(level_id)+ascii_state).encode()).hexdigest()[:20]
     target=[int(a in positives) for a in ACTION_ORDER]
     return {
-        "id":f"tree-{level_id}-{key}","group_id":str(level_id),
+        "id":f"tree-{level_id}-{key}","group_id":canonical_layout_group(board),
         "source":"sokoban_oracle","lang":"en","split":split,
         "state":ascii_state,"question":"Select ALL actions that begin a shortest valid solution to the Sokoban goal.",
         "options":[{"key":chr(ord("a")+j),"desc":OPTION_DESCRIPTIONS[a]}
@@ -130,7 +130,8 @@ def generate_oracle_level(level_id, board, initial, *, max_nodes=20000,
         if board.won(state): continue
         rows.append(as_multiselect_row(board,state,dag.optimal[state],
                   level_id,dag.depths[state],dag.distance-dag.depths[state],"train"))
-    paths=[{"level_id":str(level_id),"actions":p,"steps":len(p),"verified_success":True}
+    paths=[{"level_id":str(level_id),"group_id":canonical_layout_group(board),
+            "actions":p,"steps":len(p),"verified_success":True}
            for p in dag.trajectories(limit=trajectories)]
     return rows,paths,{"level_id":str(level_id),"distance":dag.distance,
                         "solved_paths_capped":dag.count_paths(),
