@@ -99,10 +99,10 @@ def main():
         payloads.append(
             _stage1(
                 f"tree-stage1-g2-s{seed}",
-                f"Paper 2 Stage 1 G2: Valen 30k full action SFT (3750 steps), seed {seed}, 1xH100",
-                seed, 0, 64, 3750,
+                f"Paper 2 Stage 1 G2: Valen action SFT 1200 steps (~9.6k images), seed {seed}, 1xH100",
+                seed, 0, 64, 1200,
                 f"{R}/runs/tree/stage1_g2_s{seed}",
-                max_running_time_ms="32400000",
+                max_running_time_ms="9000000",
             )
         )
 
