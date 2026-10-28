@@ -1,0 +1,56 @@
+# TreeJev Stage 1 — Valen visual action SFT (G1 smoke + G2 three seeds)
+
+Branch: `research/episodic-tree-sokoban-20261027`. Date: 2026-10-27.
+Qwen3.5-4B multimodal LoRA action SFT on the Valen Sokoban tied-optimal action
+distributions. Data prepared by `treejev.prepare valen`: 26,999 train / 3,001
+dev rows (2,790 / 310 canonical boards, 3,911 multi-optimal train rows), official
+`eval_sokoban` never downloaded or used. Each job is single-GPU H100.
+
+## G1 smoke (gate check)
+
+`python -m treejev.train_visual_action --limit 128 --dev-limit 16 --max-steps 8`:
+
+- Nonzero-LoRA-gradient check passed (no "no nonzero gradient" error).
+- Adapter saved and reloadable (`runs/tree/stage1_g1_smoke_s43/adapter_best`).
+- best_dev `[0.125, 1.5464]` (8 steps only; smoke, not a result).
+
+Two forward-path fixes were required before the smoke could pass: the answer cue
+must also extend `mm_token_type_ids` (else Qwen3.5 3D position ids raise a shape
+mismatch), and `torchvision` had to be installed for `Qwen3VLVideoProcessor`.
+
+## G2 results (30k train, 250 optimizer steps, seeds 43/44/45)
+
+`--limit 0 --dev-limit 64 --max-steps 250`, soft CE to the Valen tie-uniform
+action distribution over up/right/down/left. Dev = held-out boards.
+
+| seed | optimizer steps | action-optimal accuracy | soft CE | mass on optimal |
+|---|---:|---:|---:|---:|
+| 43 | 250 | 0.7188 | 0.7962 | 0.5906 |
+| 44 | 250 | 0.6875 | 0.8596 | 0.5821 |
+| 45 | 250 | 0.7188 | 0.8077 | 0.5298 |
+| mean | — | 0.7083 | 0.8212 | 0.5675 |
+
+`action-optimal accuracy` counts a win whenever argmax over the four restricted
+native logits is ANY tied optimal move. Random chance is roughly 0.25–0.29 (most
+boards have a single optimal action; the multi-optimal fraction is ~15%).
+
+## Interpretation
+
+The LoRA action policy reaches ~70% held-out-board accuracy versus ~25–29%
+chance after only 250 steps (about 2,000 of 30,000 images, since
+`max_steps 250 × grad_accum 8` stops the epoch early). This is a single-action
+softmax policy trained on all tied-optimal moves, not the set-readout policy of
+Stage 3 and not any branching or RL. It demonstrates that the multimodal
+processor path and the restricted A/B/C/D next-token scoring are sound, and that
+the model learns a non-trivial visual action policy on unseen layouts.
+
+Remaining Stage 1 questions (per `paper_tree/EXPERIMENTS.md` G2): full 30k steps,
+comparison against one-random-optimal CE and BCE-multihot-set, and the balanced
+by-`#optimal` breakdown — all deferred, since these 250-step runs do not exhaust
+the training set.
+
+## Cross-reference
+
+- `treejev/train_visual_action.py`: the visual SFT entry point.
+- `treejev/prepare.py`, `treejev/data.py`: Valen manifest and group-disjoint split.
+- `paper_tree/EXPERIMENTS.md`: the Stage 1 protocol and priority gates.
