@@ -31,9 +31,11 @@ WORKSPACE = "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6"
 PROJECT = "project-160ccb20-98ab-4538-a847-01d1f83d5b0f"
 LCG = "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e"
 SPEC_1GPU = "79fe954a-be92-4772-ac0b-94ad8a79b7bb"
+SPEC_4GPU = "8a53ac21-299a-4dee-85e9-9c04a544cf8d"
 
 
-def _base(name, description, command, max_running_time_ms="3600000", priority=4):
+def _base(name, description, command, max_running_time_ms="3600000", priority=4,
+          spec_id=SPEC_1GPU, shm_gi=100):
     return {
         "workspace_id": WORKSPACE,
         "project_id": PROJECT,
@@ -49,8 +51,8 @@ def _base(name, description, command, max_running_time_ms="3600000", priority=4)
                 "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
                 "image_type": "SOURCE_PRIVATE",
                 "instance_count": 1,
-                "spec_id": SPEC_1GPU,
-                "shm_gi": 100,
+                "spec_id": spec_id,
+                "shm_gi": shm_gi,
             }
         ],
     }
@@ -68,13 +70,21 @@ def _env():
 
 
 def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
-            max_running_time_ms="3600000"):
+            max_running_time_ms="3600000", gpus=1):
+    if gpus > 1:
+        runner = f'"$V/bin/torchrun" --standalone --nnodes 1 --nproc_per_node {gpus}'
+        script = f'"{R}/treejev/train_visual_action.py"'
+        shm = 900
+    else:
+        runner = f'"$V/bin/python"'
+        script = "-m treejev.train_visual_action"
+        shm = 100
     command = (
         _env()
         + f'rm -rf "{out}"\n'
         + f'mkdir -p "{R}/logs/qz"\n'
         + f'cd "{R}"\n'
-        + f'"{V}/bin/python" -m treejev.train_visual_action '
+        + f'{runner} {script} '
         + f'--train "{TRAIN}" --dev "{DEV}" '
         + f'--model "{M}" --modules "{MODULES}" '
         + f'--output "{out}" --seed {seed} '
@@ -83,7 +93,9 @@ def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
         + f'> "{R}/logs/qz/{name}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
-    return _base(name, desc, command, max_running_time_ms=max_running_time_ms)
+    spec = SPEC_4GPU if gpus > 1 else SPEC_1GPU
+    return _base(name, desc, command, max_running_time_ms=max_running_time_ms,
+                 spec_id=spec, shm_gi=shm)
 
 
 def main():
@@ -99,10 +111,11 @@ def main():
         payloads.append(
             _stage1(
                 f"tree-stage1-g2-s{seed}",
-                f"Paper 2 Stage 1 G2: Valen action SFT 1200 steps (~9.6k images), seed {seed}, 1xH100",
-                seed, 0, 64, 1200,
+                f"Paper 2 Stage 1 G2: Valen 30k full action SFT via 4xH100 DDP, seed {seed}",
+                seed, 0, 64, 940,
                 f"{R}/runs/tree/stage1_g2_s{seed}",
                 max_running_time_ms="9000000",
+                gpus=4,
             )
         )
 

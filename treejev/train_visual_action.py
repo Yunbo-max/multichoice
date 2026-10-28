@@ -119,14 +119,26 @@ def main():
         p.error(f"refusing to overwrite {args.output}")
     if "eval_sokoban" in args.train.parts or "eval_sokoban" in args.dev.parts:
         p.error("never optimize on official Valen test")
+    import os
     import torch
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel as DDP
     from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
     from peft import LoraConfig, get_peft_model
     if not torch.cuda.is_available():
         raise RuntimeError("Stage1 VLM LoRA needs CUDA; CPU-only tests use treejev oracle")
+    local_rank=int(os.environ.get("LOCAL_RANK",-1))
+    world_size=int(os.environ.get("WORLD_SIZE",1))
+    distributed=local_rank>=0 and world_size>1
+    if distributed:
+        dist.init_process_group(backend="nccl")
+        torch.cuda.set_device(local_rank)
+    device=f"cuda:{local_rank}" if distributed else "cuda"
     random.seed(args.seed);torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     train=get_rows(args.train,args.limit);dev=get_rows(args.dev,args.dev_limit)
+    if distributed:
+        train=train[local_rank::world_size]
     if {r["group_id"] for r in train}&{r["group_id"] for r in dev}:
         raise ValueError("train/dev board leakage")
     processor=AutoProcessor.from_pretrained(args.model,local_files_only=args.local_files_only)
@@ -138,19 +150,23 @@ def main():
     if absent: raise ValueError(f"module manifest does not match VLM: {absent[:5]}")
     model=get_peft_model(qwen,LoraConfig(r=args.lora_r,lora_alpha=args.lora_alpha,
                                     target_modules=targets,lora_dropout=0,bias="none"))
-    model.to("cuda");model.config.use_cache=False
+    model.to(device);model.config.use_cache=False
     model.gradient_checkpointing_enable(
         gradient_checkpointing_kwargs={"use_reentrant":False})
+    if distributed:
+        model=DDP(model,device_ids=[local_rank],find_unused_parameters=False)
     params=[v for v in model.parameters() if v.requires_grad]
     if not params: raise RuntimeError("no LoRA parameters")
     optim=torch.optim.AdamW(params,lr=args.lr)
-    args.output.mkdir(parents=True)
+    if not distributed or local_rank==0:
+        args.output.mkdir(parents=True)
     history=[];best=(-1.,float("inf"));steps=0
+    is_main=not distributed or local_rank==0
     for epoch in range(args.epochs):
         model.train();random.Random(args.seed+epoch).shuffle(train)
         optim.zero_grad(set_to_none=True);total_loss=0.;pending=0
         for row in train:
-            loss=action_loss(first_token_logits(model,processor,row,"cuda",bf16=True),row)
+            loss=action_loss(first_token_logits(model,processor,row,device,bf16=True),row)
             if not torch.isfinite(loss).item(): raise FloatingPointError("nonfinite action loss")
             (loss/args.grad_accum).backward()
             if steps==0 and pending==0 and not any(p.grad is not None and
@@ -170,29 +186,35 @@ def main():
                 if p_.grad is not None:p_.grad.mul_(scale)
             torch.nn.utils.clip_grad_norm_(params,1.0)
             optim.step();optim.zero_grad(set_to_none=True);steps+=1
-        metrics=evaluate(model,processor,dev,"cuda",True)
-        metrics.update({"epoch":epoch+1,"steps":steps,"train_loss_sum":total_loss})
-        history.append(metrics)
-        key=(metrics["action_optimal_accuracy"],metrics["soft_cross_entropy"])
-        if key[0]>best[0] or (key[0]==best[0] and key[1]<best[1]):
-            best=key;folder=args.output/"adapter_best"
-            if folder.exists():shutil.rmtree(folder)
-            model.save_pretrained(folder,safe_serialization=True)
-            processor.save_pretrained(folder)
-            (args.output/"best.json").write_text(json.dumps(metrics,indent=2)+"\n")
+        if is_main:
+            underlying=model.module if distributed else model
+            metrics=evaluate(underlying,processor,dev,device,True)
+            metrics.update({"epoch":epoch+1,"steps":steps,"train_loss_sum":total_loss})
+            history.append(metrics)
+            key=(metrics["action_optimal_accuracy"],metrics["soft_cross_entropy"])
+            if key[0]>best[0] or (key[0]==best[0] and key[1]<best[1]):
+                best=key;folder=args.output/"adapter_best"
+                if folder.exists():shutil.rmtree(folder)
+                underlying.save_pretrained(folder,safe_serialization=True)
+                processor.save_pretrained(folder)
+                (args.output/"best.json").write_text(json.dumps(metrics,indent=2)+"\n")
         if steps>=args.max_steps:break
-    source_bytes=args.modules.read_bytes()
-    (args.output/"training.json").write_text(json.dumps({
-      "status":"FINISHED","train":str(args.train),"dev":str(args.dev),
-      "model":args.model,"model_weight_hash_verified":False,
-      "module_manifest_sha256":hashlib.sha256(source_bytes).hexdigest(),
-      "max_steps":args.max_steps,"optimizer_steps":steps,
-      "history":history,"best_dev":best,
-      "official_test_touched":False,
-      "note":"Check exact base model and adapter reload before held-out evaluation."
-    },indent=2)+"\n")
-    print(json.dumps({"training_steps":steps,"best_dev":best,
-                      "checkpoint":str(args.output/"adapter_best")},indent=2))
+    if is_main:
+        source_bytes=args.modules.read_bytes()
+        (args.output/"training.json").write_text(json.dumps({
+          "status":"FINISHED","train":str(args.train),"dev":str(args.dev),
+          "model":args.model,"model_weight_hash_verified":False,
+          "module_manifest_sha256":hashlib.sha256(source_bytes).hexdigest(),
+          "max_steps":args.max_steps,"optimizer_steps":steps,
+          "world_size":world_size,
+          "history":history,"best_dev":best,
+          "official_test_touched":False,
+          "note":"Check exact base model and adapter reload before held-out evaluation."
+        },indent=2)+"\n")
+        print(json.dumps({"training_steps":steps,"best_dev":best,
+                          "checkpoint":str(args.output/"adapter_best")},indent=2))
+    if distributed:
+        dist.destroy_process_group()
 
 if __name__=="__main__":
     main()
