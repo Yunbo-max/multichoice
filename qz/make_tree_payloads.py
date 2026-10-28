@@ -70,7 +70,7 @@ def _env():
 
 
 def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
-            max_running_time_ms="3600000", gpus=1):
+            max_running_time_ms="3600000", gpus=1, batch_size=8):
     if gpus > 1:
         runner = f'"$V/bin/torchrun" --standalone --nnodes 1 --nproc_per_node {gpus}'
         script = f'"{R}/treejev/train_visual_action.py"'
@@ -89,6 +89,7 @@ def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
         + f'--model "{M}" --modules "{MODULES}" '
         + f'--output "{out}" --seed {seed} '
         + f'--limit {limit} --dev-limit {dev_limit} --max-steps {max_steps} '
+        + f'--batch-size {batch_size} '
         + f'--local-files-only '
         + f'> "{R}/logs/qz/{name}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
@@ -111,11 +112,12 @@ def main():
         payloads.append(
             _stage1(
                 f"tree-stage1-g2-s{seed}",
-                f"Paper 2 Stage 1 G2: Valen action SFT 1200 steps (~9.6k images), seed {seed}, 1xH100",
-                seed, 0, 64, 1200,
+                f"Paper 2 Stage 1 G2: Valen batched SFT (batch 8, ~21.6k images), seed {seed}, 1xH100",
+                seed, 0, 64, 2700,
                 f"{R}/runs/tree/stage1_g2_s{seed}",
-                max_running_time_ms="10500000",
+                max_running_time_ms="10800000",
                 gpus=1,
+                batch_size=8,
             )
         )
 

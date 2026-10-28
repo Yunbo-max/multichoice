@@ -34,24 +34,27 @@ def get_rows(filename, limit=0):
         raise ValueError("duplicate input rows")
     return rows
 
-def first_token_logits(model, processor, row, device, *, bf16):
+def first_token_logits_batch(model, processor, rows, device, *, bf16):
     from PIL import Image
     import torch
     # Only the visible image and public game rules enter this forward.
-    image_path=Path(row["image_path"])
-    with Image.open(image_path) as raw:
-        image=raw.convert("RGB")
+    messages=[]
+    for row in rows:
+        with Image.open(row["image_path"]) as raw:
+            image=raw.convert("RGB")
+        messages.append([{"role":"user","content":[
+            {"type":"image","image":image},{"type":"text","text":PROMPT}]}])
     # Follow the official Qwen3.5 multimodal processor path. The PIL image
     # becomes pixel_values and image_grid_thw within the returned batch.
-    messages=[{"role":"user","content":[
-        {"type":"image","image":image},{"type":"text","text":PROMPT}]}]
     features=processor.apply_chat_template(
         messages,tokenize=True,add_generation_prompt=True,
-        return_dict=True,return_tensors="pt",enable_thinking=False)
+        return_dict=True,return_tensors="pt",enable_thinking=False,
+        padding=True)
     # Append a known answer cue after the multimodal template so that next
     # token logits score A/B/C/D directly without generating textual CoT.
     cue=processor.tokenizer("The correct answer is (",
             add_special_tokens=False,return_tensors="pt")["input_ids"]
+    cue=cue.expand(features["input_ids"].shape[0],-1)
     features["input_ids"]=torch.cat((features["input_ids"],cue),dim=1)
     features["attention_mask"]=torch.cat((features["attention_mask"],
                              torch.ones_like(cue)),dim=1)
@@ -60,37 +63,46 @@ def first_token_logits(model, processor, row, device, *, bf16):
                              torch.zeros_like(cue)),dim=1)
     features={k:(v.to(device=device,dtype=torch.bfloat16 if bf16 else torch.float32)
                  if v.is_floating_point() else v.to(device)) for k,v in features.items()}
-    logits=model(**features,use_cache=False).logits[0,-1]
+    logits=model(**features,use_cache=False).logits  # [batch, seq, vocab]
+    last_idx=features["attention_mask"].sum(dim=1)-1  # last valid token per row
+    batch_idx=torch.arange(logits.shape[0],device=logits.device)
+    last_logits=logits[batch_idx,last_idx]  # [batch, vocab]
     token_ids=[]
     for letter in "ABCD":
         codes=processor.tokenizer.encode(letter,add_special_tokens=False)
         if len(codes)!=1:
             raise ValueError(f"non-single-token answer letter: {letter}")
         token_ids.append(codes[0])
-    return logits[torch.tensor(token_ids,device=logits.device)].float()
+    token_ids=torch.tensor(token_ids,device=logits.device)
+    return last_logits[:,token_ids].float()  # [batch, 4]
 
-def action_loss(logits, row):
+def action_loss_batch(logits, rows):
     import torch
     import torch.nn.functional as F
-    targets=torch.tensor([row["target_probs"][a] for a in ACTION_ORDER],
+    targets=torch.tensor([[r["target_probs"][a] for a in ACTION_ORDER] for r in rows],
                          device=logits.device,dtype=torch.float32)
-    if not torch.isfinite(targets).all() or torch.abs(targets.sum()-1)>1e-5:
+    if not torch.isfinite(targets).all() or torch.any(torch.abs(targets.sum(-1)-1)>1e-5):
         raise ValueError("bad soft action label")
-    return -(targets*F.log_softmax(logits,dim=-1)).sum()
+    return -(targets*F.log_softmax(logits,dim=-1)).sum(-1).mean()
 
-def evaluate(model, processor, rows, device, bf16):
+def evaluate(model, processor, rows, device, bf16, batch_size=8):
     import torch
     model.eval()
     loss_sum=0.; hits=0; conf_sum=0.
     with torch.no_grad():
-        for row in rows:
-            logits=first_token_logits(model,processor,row,device,bf16=bf16)
-            loss_sum+=float(action_loss(logits,row).item())
+        for i in range(0,len(rows),batch_size):
+            batch_rows=rows[i:i+batch_size]
+            logits=first_token_logits_batch(model,processor,batch_rows,device,bf16=bf16)
             probs=logits.softmax(-1)
-            picked=ACTION_ORDER[int(torch.argmax(probs))]
-            hits+=int(row["target_probs"][picked]>0)
-            conf_sum+=float(sum(probs[i].item() for i,a in enumerate(ACTION_ORDER)
-                                if row["target_probs"][a]>0))
+            for j,row in enumerate(batch_rows):
+                loss_sum+=float(-(torch.tensor(
+                    [row["target_probs"][a] for a in ACTION_ORDER],
+                    device=logits.device,dtype=torch.float32)
+                    *torch.log_softmax(logits[j],dim=-1)).sum().item())
+                picked=ACTION_ORDER[int(torch.argmax(probs[j]))]
+                hits+=int(row["target_probs"][picked]>0)
+                conf_sum+=float(sum(probs[j][k].item() for k,a in enumerate(ACTION_ORDER)
+                                    if row["target_probs"][a]>0))
     return {"action_optimal_accuracy":hits/len(rows),
             "soft_cross_entropy":loss_sum/len(rows),
             "mass_on_optimal_actions":conf_sum/len(rows),"n":len(rows)}
@@ -105,7 +117,8 @@ def main():
     p.add_argument("--lora-r",type=int,default=16)
     p.add_argument("--lora-alpha",type=int,default=32)
     p.add_argument("--lr",type=float,default=5e-5)
-    p.add_argument("--grad-accum",type=int,default=8)
+    p.add_argument("--grad-accum",type=int,default=1)
+    p.add_argument("--batch-size",type=int,default=8)
     p.add_argument("--epochs",type=int,default=1)
     p.add_argument("--limit",type=int,default=0)
     p.add_argument("--dev-limit",type=int,default=64)
@@ -113,8 +126,8 @@ def main():
     p.add_argument("--seed",type=int,default=43)
     p.add_argument("--local-files-only",action="store_true")
     args=p.parse_args()
-    if args.grad_accum<1 or args.epochs<1 or args.max_steps<1:
-        p.error("invalid accumulation/epoch/steps")
+    if args.grad_accum<1 or args.epochs<1 or args.max_steps<1 or args.batch_size<1:
+        p.error("invalid accumulation/epoch/steps/batch")
     if args.output.exists():
         p.error(f"refusing to overwrite {args.output}")
     if "eval_sokoban" in args.train.parts or "eval_sokoban" in args.dev.parts:
@@ -165,8 +178,10 @@ def main():
     for epoch in range(args.epochs):
         model.train();random.Random(args.seed+epoch).shuffle(train)
         optim.zero_grad(set_to_none=True);total_loss=0.;pending=0
-        for row in train:
-            loss=action_loss(first_token_logits(model,processor,row,device,bf16=True),row)
+        for i in range(0,len(train),args.batch_size):
+            batch_rows=train[i:i+args.batch_size]
+            logits=first_token_logits_batch(model,processor,batch_rows,device,bf16=True)
+            loss=action_loss_batch(logits,batch_rows)
             if not torch.isfinite(loss).item(): raise FloatingPointError("nonfinite action loss")
             (loss/args.grad_accum).backward()
             if steps==0 and pending==0 and not any(p.grad is not None and
