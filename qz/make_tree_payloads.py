@@ -67,7 +67,8 @@ def _env():
     )
 
 
-def _stage1(name, desc, seed, limit, dev_limit, max_steps, out):
+def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
+            max_running_time_ms="3600000"):
     command = (
         _env()
         + f'rm -rf "{out}"\n'
@@ -82,7 +83,7 @@ def _stage1(name, desc, seed, limit, dev_limit, max_steps, out):
         + f'> "{R}/logs/qz/{name}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
     )
-    return _base(name, desc, command)
+    return _base(name, desc, command, max_running_time_ms=max_running_time_ms)
 
 
 def main():
@@ -98,9 +99,10 @@ def main():
         payloads.append(
             _stage1(
                 f"tree-stage1-g2-s{seed}",
-                f"Paper 2 Stage 1 G2: Valen 30k action SFT, seed {seed}, 1xH100",
-                seed, 0, 64, 250,
+                f"Paper 2 Stage 1 G2: Valen 30k full action SFT (3750 steps), seed {seed}, 1xH100",
+                seed, 0, 64, 3750,
                 f"{R}/runs/tree/stage1_g2_s{seed}",
+                max_running_time_ms="32400000",
             )
         )
 
