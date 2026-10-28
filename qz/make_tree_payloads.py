@@ -114,7 +114,7 @@ def main():
                 f"Paper 2 Stage 1 G2: Valen 30k full action SFT via 4xH100 DDP, seed {seed}",
                 seed, 0, 64, 940,
                 f"{R}/runs/tree/stage1_g2_s{seed}",
-                max_running_time_ms="9000000",
+                max_running_time_ms="10200000",
                 gpus=4,
             )
         )
