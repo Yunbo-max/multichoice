@@ -26,7 +26,7 @@
 
 ## 关键路径
 
-- 仓库：`/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish`
+- 仓库：`/inspire/hdd/global_user/zhangjiaquan-253108540222/jev`
 - venv：`/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii`
 - 模型：`.../models/Qwen3.5-4B`（多模态 qwen3_5）
 - QZ CLI：`qz train CreateJob --data "$(cat <payload>.json)"`，先 `--dry-run` 再提交。
