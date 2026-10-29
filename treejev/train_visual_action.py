@@ -34,7 +34,7 @@ def get_rows(filename, limit=0):
         raise ValueError("duplicate input rows")
     return rows
 
-def first_token_logits_batch(model, processor, rows, device, *, bf16):
+def _build_batch_features(processor, rows):
     from PIL import Image
     import torch
     # Only the visible image and public game rules enter this forward.
@@ -61,6 +61,10 @@ def first_token_logits_batch(model, processor, rows, device, *, bf16):
     if "mm_token_type_ids" in features:
         features["mm_token_type_ids"]=torch.cat((features["mm_token_type_ids"],
                              torch.zeros_like(cue)),dim=1)
+    return features
+
+def _forward_features(model, processor, features, device, *, bf16):
+    import torch
     features={k:(v.to(device=device,dtype=torch.bfloat16 if bf16 else torch.float32)
                  if v.is_floating_point() else v.to(device)) for k,v in features.items()}
     logits=model(**features,use_cache=False).logits  # [batch, seq, vocab]
@@ -75,6 +79,57 @@ def first_token_logits_batch(model, processor, rows, device, *, bf16):
         token_ids.append(codes[0])
     token_ids=torch.tensor(token_ids,device=logits.device)
     return last_logits[:,token_ids].float()  # [batch, 4]
+
+def first_token_logits_batch(model, processor, rows, device, *, bf16):
+    features=_build_batch_features(processor,rows)
+    return _forward_features(model,processor,features,device,bf16=bf16)
+
+class FeatureCache:
+    """Load pre-cached processor features so training skips CPU preprocessing."""
+    def __init__(self, cache_dir):
+        import json
+        self.dir=Path(cache_dir)
+        manifest=json.loads((self.dir/"manifest.json").read_text())
+        self.chunks=[]
+        self.row_index=[]  # row position -> (chunk_idx, offset_in_chunk)
+        for ci,m in enumerate(manifest):
+            self.chunks.append((self.dir/m["chunk"], m["n"]))
+            for oi in range(m["n"]):
+                self.row_index.append((ci,oi))
+        self.loaded={}
+
+    def _chunk(self, ci):
+        import torch
+        if ci not in self.loaded:
+            path,n=self.chunks[ci]
+            self.loaded[ci]=torch.load(path,map_location="cpu",weights_only=False)
+        return self.loaded[ci]
+
+    def get(self, indices):
+        import torch
+        groups={}
+        for idx in indices:
+            ci,oi=self.row_index[idx]
+            groups.setdefault(ci,[]).append(oi)
+        pixel_values=[];grid_thw=[];input_ids=[];attention_mask=[];mm=[]
+        for ci,offs in groups.items():
+            c=self._chunk(ci)
+            for oi in offs:
+                pixel_values.append(c["pixel_values"][oi])
+                grid_thw.append(c["image_grid_thw"][oi])
+                input_ids.append(c["input_ids"][oi])
+                attention_mask.append(c["attention_mask"][oi])
+                mm.append(c["mm_token_type_ids"][oi])
+        # re-pad text tensors to the batch max length (they were padded per-chunk)
+        max_len=max(t.shape[0] for t in input_ids)
+        pad=lambda t: torch.nn.functional.pad(t,(0,max_len-t.shape[0]),value=0)
+        return {
+            "pixel_values": torch.cat(pixel_values,dim=0),  # [total_patches, 1536]
+            "image_grid_thw": torch.stack(grid_thw),        # [n, 3]
+            "input_ids": torch.stack([pad(t) for t in input_ids]),
+            "attention_mask": torch.stack([pad(t) for t in attention_mask]),
+            "mm_token_type_ids": torch.stack([pad(t) for t in mm]),
+        }
 
 def action_loss_batch(logits, rows):
     import torch
@@ -125,6 +180,8 @@ def main():
     p.add_argument("--max-steps",type=int,default=250)
     p.add_argument("--seed",type=int,default=43)
     p.add_argument("--local-files-only",action="store_true")
+    p.add_argument("--cache-dir",type=Path,default=None,
+                   help="pre-cached processor features from treejev.cache_valen_features")
     args=p.parse_args()
     if args.grad_accum<1 or args.epochs<1 or args.max_steps<1 or args.batch_size<1:
         p.error("invalid accumulation/epoch/steps/batch")
@@ -175,12 +232,20 @@ def main():
         args.output.mkdir(parents=True)
     history=[];best=(-1.,float("inf"));steps=0
     is_main=not distributed or local_rank==0
+    cache=FeatureCache(args.cache_dir) if args.cache_dir else None
     for epoch in range(args.epochs):
-        model.train();random.Random(args.seed+epoch).shuffle(train)
+        model.train()
+        indices=list(range(len(train)))
+        random.Random(args.seed+epoch).shuffle(indices)
         optim.zero_grad(set_to_none=True);total_loss=0.;pending=0
-        for i in range(0,len(train),args.batch_size):
-            batch_rows=train[i:i+args.batch_size]
-            logits=first_token_logits_batch(model,processor,batch_rows,device,bf16=True)
+        for i in range(0,len(indices),args.batch_size):
+            batch_idx=indices[i:i+args.batch_size]
+            batch_rows=[train[k] for k in batch_idx]
+            if cache is not None:
+                features=cache.get(batch_idx)
+                logits=_forward_features(model,processor,features,device,bf16=True)
+            else:
+                logits=first_token_logits_batch(model,processor,batch_rows,device,bf16=True)
             loss=action_loss_batch(logits,batch_rows)
             if not torch.isfinite(loss).item(): raise FloatingPointError("nonfinite action loss")
             (loss/args.grad_accum).backward()

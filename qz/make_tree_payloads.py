@@ -70,7 +70,7 @@ def _env():
 
 
 def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
-            max_running_time_ms="3600000", gpus=1, batch_size=8):
+            max_running_time_ms="3600000", gpus=1, batch_size=8, cache_dir=None):
     if gpus > 1:
         runner = f'"$V/bin/torchrun" --standalone --nnodes 1 --nproc_per_node {gpus}'
         script = f'"{R}/treejev/train_visual_action.py"'
@@ -79,6 +79,7 @@ def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
         runner = f'"$V/bin/python"'
         script = "-m treejev.train_visual_action"
         shm = 100
+    cache_flag = f'--cache-dir "{cache_dir}"' if cache_dir else ""
     command = (
         _env()
         + f'rm -rf "{out}"\n'
@@ -90,6 +91,7 @@ def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
         + f'--output "{out}" --seed {seed} '
         + f'--limit {limit} --dev-limit {dev_limit} --max-steps {max_steps} '
         + f'--batch-size {batch_size} '
+        + f'{cache_flag} '
         + f'--local-files-only '
         + f'> "{R}/logs/qz/{name}.log" 2>&1\n'
         + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
@@ -99,25 +101,42 @@ def _stage1(name, desc, seed, limit, dev_limit, max_steps, out,
                  spec_id=spec, shm_gi=shm)
 
 
+def _cache_features(name, desc, jsonl, out):
+    command = (
+        _env()
+        + f'rm -rf "{out}"\n'
+        + f'mkdir -p "{R}/logs/qz"\n'
+        + f'cd "{R}"\n'
+        + f'"{V}/bin/python" -m treejev.cache_valen_features '
+        + f'--jsonl "{jsonl}" --model "{M}" --output "{out}" '
+        + f'--chunk-size 1000 '
+        + f'> "{R}/logs/qz/{name}.log" 2>&1\n'
+        + 'status=$?; echo "JOB EXIT=$status"; exit $status\n'
+    )
+    return _base(name, desc, command, max_running_time_ms="10800000",
+                 spec_id=SPEC_1GPU, shm_gi=100)
+
+
 def main():
     payloads = [
-        _stage1(
-            "tree-stage1-g1-smoke-s43",
-            "Paper 2 Stage 1 G1: Valen 128-image LoRA smoke, nonzero-gradient check, seed 43, 1xH100",
-            43, 128, 16, 8,
-            f"{R}/runs/tree/stage1_g1_smoke_s43",
+        _cache_features(
+            "tree-valen-cache-train",
+            "Cache Valen train processor features (30k) for Stage 1",
+            f"{R}/runs/tree/valen_split/train_visual.jsonl",
+            f"{R}/runs/tree/valen_cache_train",
         ),
     ]
     for seed in (43, 44, 45):
         payloads.append(
             _stage1(
                 f"tree-stage1-g2-s{seed}",
-                f"Paper 2 Stage 1 G2: Valen batched SFT (batch 8, ~21.6k images), seed {seed}, 1xH100",
-                seed, 0, 64, 2700,
+                f"Paper 2 Stage 1 G2: Valen 30k full batched SFT (cache, batch 8), seed {seed}, 1xH100",
+                seed, 0, 64, 3750,
                 f"{R}/runs/tree/stage1_g2_s{seed}",
                 max_running_time_ms="10800000",
                 gpus=1,
                 batch_size=8,
+                cache_dir=f"{R}/runs/tree/valen_cache_train",
             )
         )
 
