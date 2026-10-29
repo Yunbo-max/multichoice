@@ -73,7 +73,7 @@ def main():
             if "mm_token_type_ids" in features:
                 features["mm_token_type_ids"] = torch.cat(
                     (features["mm_token_type_ids"], torch.zeros_like(cue)), dim=1)
-            pixel_values.append(features["pixel_values"][0])
+            pixel_values.append(features["pixel_values"].contiguous())
             grid_thw.append(features["image_grid_thw"][0])
             input_ids.append(features["input_ids"][0])
             attention_mask.append(features["attention_mask"][0])
