@@ -13,6 +13,8 @@ import random
 import shutil
 from pathlib import Path
 from treejev.data import ACTION_ORDER, read_jsonl
+from treejev.visual_batching import (append_answer_cue, last_valid_positions,
+                                     pack_token_rows)
 
 PROMPT = (
     "You are playing Sokoban. Walls block movement. Push boxes onto targets. "
@@ -54,21 +56,16 @@ def _build_batch_features(processor, rows):
     # token logits score A/B/C/D directly without generating textual CoT.
     cue=processor.tokenizer("The correct answer is (",
             add_special_tokens=False,return_tensors="pt")["input_ids"]
-    cue=cue.expand(features["input_ids"].shape[0],-1)
-    features["input_ids"]=torch.cat((features["input_ids"],cue),dim=1)
-    features["attention_mask"]=torch.cat((features["attention_mask"],
-                             torch.ones_like(cue)),dim=1)
-    if "mm_token_type_ids" in features:
-        features["mm_token_type_ids"]=torch.cat((features["mm_token_type_ids"],
-                             torch.zeros_like(cue)),dim=1)
-    return features
+    return append_answer_cue(
+        features, cue, pad_token_id=processor.tokenizer.pad_token_id or 0
+    )
 
 def _forward_features(model, processor, features, device, *, bf16):
     import torch
     features={k:(v.to(device=device,dtype=torch.bfloat16 if bf16 else torch.float32)
                  if v.is_floating_point() else v.to(device)) for k,v in features.items()}
     logits=model(**features,use_cache=False).logits  # [batch, seq, vocab]
-    last_idx=features["attention_mask"].sum(dim=1)-1  # last valid token per row
+    last_idx=last_valid_positions(features["attention_mask"])  # validated right-packed
     batch_idx=torch.arange(logits.shape[0],device=logits.device)
     last_logits=logits[batch_idx,last_idx]  # [batch, vocab]
     token_ids=[]
@@ -85,49 +82,68 @@ def first_token_logits_batch(model, processor, rows, device, *, bf16):
     return _forward_features(model,processor,features,device,bf16=bf16)
 
 class FeatureCache:
-    """Load pre-cached processor features so training skips CPU preprocessing."""
-    def __init__(self, cache_dir):
-        import json
-        self.dir=Path(cache_dir)
-        manifest=json.loads((self.dir/"manifest.json").read_text())
-        self.chunks=[]
-        self.row_index=[]  # row position -> (chunk_idx, offset_in_chunk)
-        for ci,m in enumerate(manifest):
-            self.chunks.append((self.dir/m["chunk"], m["n"]))
-            for oi in range(m["n"]):
-                self.row_index.append((ci,oi))
-        self.loaded={}
+    """Bounded LRU with cache/label identity validation and padding-safe packing.
+
+    Existing Valen 30k chunks remain compatible: their answer cue was inserted
+    for each single image before chunk padding, which is removed per minibatch.
+    """
+    def __init__(self, cache_dir, max_loaded_chunks=3):
+        from collections import OrderedDict
+        self.dir = Path(cache_dir)
+        manifest = json.loads((self.dir/"manifest.json").read_text())
+        if max_loaded_chunks < 1 or not manifest:
+            raise ValueError("cache needs chunks and positive max_loaded_chunks")
+        self.chunks, self.row_index = [], []
+        for ci, item in enumerate(manifest):
+            if int(item["n"]) < 1 or int(item.get("start",len(self.row_index))) != len(self.row_index):
+                raise ValueError("cache chunks must be positive and contiguous")
+            self.chunks.append((self.dir/item["chunk"], item["n"]))
+            self.row_index += [(ci, oi) for oi in range(item["n"])]
+        self.loaded = OrderedDict()
+        self.max_loaded_chunks = max_loaded_chunks
 
     def _chunk(self, ci):
         import torch
-        if ci not in self.loaded:
-            path,n=self.chunks[ci]
-            self.loaded[ci]=torch.load(path,map_location="cpu",weights_only=False)
-            for old in list(self.loaded):
-                if old < ci - 2:
-                    del self.loaded[old]
+        if ci in self.loaded:
+            self.loaded.move_to_end(ci)
+        else:
+            path, expected_n = self.chunks[ci]
+            chunk = torch.load(path, map_location="cpu", weights_only=True)
+            if len(chunk["ids"]) != expected_n or len(chunk["input_ids"]) != expected_n:
+                raise ValueError(f"cache chunk length mismatch {path}")
+            self.loaded[ci] = chunk
+            while len(self.loaded) > self.max_loaded_chunks:
+                self.loaded.popitem(last=False)
         return self.loaded[ci]
 
-    def get(self, indices):
+    def get(self, indices, *, expected_ids=None, pad_token_id=0):
         import torch
-        pixel_values=[];grid_thw=[];input_ids=[];attention_mask=[];mm=[]
-        for idx in indices:
-            ci,oi=self.row_index[idx]
-            c=self._chunk(ci)
-            pixel_values.append(c["pixel_values"][oi])
-            grid_thw.append(c["image_grid_thw"][oi])
-            input_ids.append(c["input_ids"][oi])
-            attention_mask.append(c["attention_mask"][oi])
-            mm.append(c["mm_token_type_ids"][oi])
-        # re-pad text tensors to the batch max length (they were padded per-chunk)
-        max_len=max(t.shape[0] for t in input_ids)
-        pad=lambda t: torch.nn.functional.pad(t,(0,max_len-t.shape[0]),value=0)
+        if not indices:
+            raise ValueError("empty cache minibatch")
+        if expected_ids is not None and len(expected_ids) != len(indices):
+            raise ValueError("expected_ids length mismatch")
+        pixel_values, grid_thw, ids, masks, mm_types = [], [], [], [], []
+        for j, idx in enumerate(indices):
+            if idx < 0 or idx >= len(self.row_index):
+                raise IndexError(f"cache row {idx} out of range")
+            ci, oi = self.row_index[idx]
+            chunk = self._chunk(ci)
+            if expected_ids is not None and chunk["ids"][oi] != expected_ids[j]:
+                raise ValueError(
+                    f"cache/action-label row identity mismatch at {idx}: "
+                    f"{chunk['ids'][oi]!r} != {expected_ids[j]!r}"
+                )
+            pixel_values.append(chunk["pixel_values"][oi])
+            grid_thw.append(chunk["image_grid_thw"][oi])
+            ids.append(chunk["input_ids"][oi])
+            masks.append(chunk["attention_mask"][oi])
+            mm_types.append(chunk["mm_token_type_ids"][oi])
+        packed = pack_token_rows(ids, masks, mm_token_type_ids=mm_types,
+                                 pad_token_id=pad_token_id)
         return {
-            "pixel_values": torch.cat(pixel_values,dim=0),  # [total_patches, 1536]
-            "image_grid_thw": torch.stack(grid_thw),        # [n, 3]
-            "input_ids": torch.stack([pad(t) for t in input_ids]),
-            "attention_mask": torch.stack([pad(t) for t in attention_mask]),
-            "mm_token_type_ids": torch.stack([pad(t) for t in mm]),
+            "pixel_values": torch.cat(pixel_values, dim=0),
+            "image_grid_thw": torch.stack(grid_thw),
+            **packed,
         }
 
 def action_loss_batch(logits, rows):
@@ -241,7 +257,10 @@ def main():
             batch_idx=indices[i:i+args.batch_size]
             batch_rows=[train[k] for k in batch_idx]
             if cache is not None:
-                features=cache.get(batch_idx)
+                features=cache.get(
+                    batch_idx, expected_ids=[row["id"] for row in batch_rows],
+                    pad_token_id=processor.tokenizer.pad_token_id or 0,
+                )
                 logits=_forward_features(model,processor,features,device,bf16=True)
             else:
                 logits=first_token_logits_batch(model,processor,batch_rows,device,bf16=True)

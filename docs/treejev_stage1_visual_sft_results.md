@@ -1,3 +1,5 @@
+> **2026-10-29 Visual SFT accuracy caveat:** Previous uncached batch evaluation appended the answer cue AFTER batch padding, then gathered logits at `attention_mask.sum()-1`. For shorter examples this can be a padding position. The existing 64-row Dev figures below, including 85.94%, are **provisional pending padding-safe full-DEV reevaluation**. The cached 30k training preprocessing was single-image with the cue BEFORE chunk padding, so the issue does not automatically invalidate its training gradients. See `docs/treejev_visual_batch_fix_2026-10-29.md`.
+
 # TreeJev Stage 1 — Valen visual action SFT (G1 smoke + G2 three seeds)
 
 Branch: `research/episodic-tree-sokoban-20261027`. Date: 2026-10-27.
