@@ -30,24 +30,40 @@ action distribution over up/right/down/left. Dev = held-out boards.
 | 45 | 250 | 0.7188 | 0.8077 | 0.5298 |
 | mean | — | 0.7083 | 0.8212 | 0.5675 |
 
+## G2 batched results (batch 8, 2700 steps ≈ 21.6k images, seeds 43/44/45)
+
+After switching from per-image to batch-8 forward (`--batch-size 8`, `padding=True`
+for mixed-size Valen images), a single job can cover ~72% of the 30k train set
+within the ~3h per-job limit.
+
+| seed | optimizer steps | action-optimal accuracy | soft CE | mass on optimal |
+|---|---:|---:|---:|---:|
+| 43 | 2700 | 0.8281 | 0.4920 | 0.7397 |
+| 44 | 2700 | 0.8438 | 0.6521 | 0.7815 |
+| 45 | 2700 | 0.7969 | 0.5203 | 0.7616 |
+| mean | — | **0.8229** | 0.5548 | 0.7609 |
+
 `action-optimal accuracy` counts a win whenever argmax over the four restricted
 native logits is ANY tied optimal move. Random chance is roughly 0.25–0.29 (most
 boards have a single optimal action; the multi-optimal fraction is ~15%).
 
 ## Interpretation
 
-The LoRA action policy reaches ~70% held-out-board accuracy versus ~25–29%
-chance after only 250 steps (about 2,000 of 30,000 images, since
-`max_steps 250 × grad_accum 8` stops the epoch early). This is a single-action
-softmax policy trained on all tied-optimal moves, not the set-readout policy of
-Stage 3 and not any branching or RL. It demonstrates that the multimodal
-processor path and the restricted A/B/C/D next-token scoring are sound, and that
-the model learns a non-trivial visual action policy on unseen layouts.
+The LoRA action policy reaches ~82% held-out-board accuracy versus ~25–29%
+chance after 2700 batched steps (~21.6k of 30k images), up from ~71% at 250
+steps. This is a single-action softmax policy trained on all tied-optimal moves,
+not the set-readout policy of Stage 3 and not any branching or RL. It demonstrates
+that the multimodal processor path and the restricted A/B/C/D next-token scoring
+are sound, and that the model learns a strong visual action policy on unseen
+layouts.
 
-Remaining Stage 1 questions (per `paper_tree/EXPERIMENTS.md` G2): full 30k steps,
-comparison against one-random-optimal CE and BCE-multihot-set, and the balanced
-by-`#optimal` breakdown — all deferred, since these 250-step runs do not exhaust
-the training set.
+The remaining gap to the full 30k is the CPU image-preprocessing cost
+(resize/patch), not the GPU forward. Caching the processor output would remove
+that bottleneck and let a single job exhaust all 30k rows.
+
+Remaining Stage 1 questions (per `paper_tree/EXPERIMENTS.md` G2): comparison
+against one-random-optimal CE and BCE-multihot-set, and the balanced by-`#optimal`
+breakdown — still deferred.
 
 ## Cross-reference
 
