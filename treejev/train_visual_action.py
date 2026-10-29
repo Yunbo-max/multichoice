@@ -103,6 +103,9 @@ class FeatureCache:
         if ci not in self.loaded:
             path,n=self.chunks[ci]
             self.loaded[ci]=torch.load(path,map_location="cpu",weights_only=False)
+            for old in list(self.loaded):
+                if old < ci - 2:
+                    del self.loaded[old]
         return self.loaded[ci]
 
     def get(self, indices):
