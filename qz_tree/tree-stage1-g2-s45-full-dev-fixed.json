@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "tree-stage1-g2-s45-full-dev-padding-fixed",
+  "description": "Paper2 FIX: independent full 3001 DEV post-padding audit with batch=1 vs 8 check (single H100, no retraining)",
+  "framework": "pytorch",
+  "command": "set -euo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nMODEL=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTHONPATH=\"$R\"\ncd \"$R\"\ntest \"$(git rev-parse --abbrev-ref HEAD)\" = \"research/episodic-tree-sokoban-20261027\"\ntest -f \"$R/treejev/visual_batching.py\"\ntest -f \"$R/treejev/eval_visual_action.py\"\nmkdir -p \"$R/logs/qz\"\n\"$V/bin/python\" -m treejev.eval_visual_action \\\n  --base-model \"$MODEL\" \\\n  --adapter \"$R/runs/tree/stage1_g2_s45/adapter_best\" \\\n  --dev \"$R/runs/tree/valen_split/dev_visual.jsonl\" \\\n  --train-manifest \"$R/runs/tree/valen_split/train_visual.jsonl\" \\\n  --output \"$R/runs/tree/stage1_g2_s45/full_dev_padding_fixed_20261029.json\" \\\n  --batch-size 8 --batch-check 8 --limit 0 \\\n  > \"$R/logs/qz/tree-stage1-g2-s45-full-dev-fixed.log\" 2>&1\n",
+  "max_running_time_ms": "10200000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}
