@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "paper1-eval-set_ce_independent-s43",
+  "description": "Paper 1 frozen Test eval: set_ce_independent, seed 43, threshold 0.5, 1xH100",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTHONPATH=\"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\"\nrm -rf \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper_static_eval/qwen3.5-4b-bce-s44/seed_43/set_ce_independent\"\nmkdir -p \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/logs/qz\" \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper_static_eval\"\ncd \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\"\n\"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii/bin/python\" -m harness.eval_multiselect --input \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/multiselect_grouped_multi/test.jsonl\" --model \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper_static/qwen3.5-4b-bce-s44/seed_43/set_ce_independent/final\" --expected-split test --threshold 0.5 --decoder auto --output \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper_static_eval/qwen3.5-4b-bce-s44/seed_43/set_ce_independent\" --checkpoint-id \"paper1|set_ce_independent|seed_43\" > \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/logs/qz/paper1-eval-set_ce_independent-s43.log\" 2>&1\nstatus=$?; echo \"JOB EXIT=$status\"; exit $status\n",
+  "max_running_time_ms": "3600000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}
