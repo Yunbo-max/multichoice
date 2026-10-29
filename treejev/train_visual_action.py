@@ -110,19 +110,15 @@ class FeatureCache:
 
     def get(self, indices):
         import torch
-        groups={}
+        pixel_values=[];grid_thw=[];input_ids=[];attention_mask=[];mm=[]
         for idx in indices:
             ci,oi=self.row_index[idx]
-            groups.setdefault(ci,[]).append(oi)
-        pixel_values=[];grid_thw=[];input_ids=[];attention_mask=[];mm=[]
-        for ci,offs in groups.items():
             c=self._chunk(ci)
-            for oi in offs:
-                pixel_values.append(c["pixel_values"][oi])
-                grid_thw.append(c["image_grid_thw"][oi])
-                input_ids.append(c["input_ids"][oi])
-                attention_mask.append(c["attention_mask"][oi])
-                mm.append(c["mm_token_type_ids"][oi])
+            pixel_values.append(c["pixel_values"][oi])
+            grid_thw.append(c["image_grid_thw"][oi])
+            input_ids.append(c["input_ids"][oi])
+            attention_mask.append(c["attention_mask"][oi])
+            mm.append(c["mm_token_type_ids"][oi])
         # re-pad text tensors to the batch max length (they were padded per-chunk)
         max_len=max(t.shape[0] for t in input_ids)
         pad=lambda t: torch.nn.functional.pad(t,(0,max_len-t.shape[0]),value=0)
