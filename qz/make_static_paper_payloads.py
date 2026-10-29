@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "qz_static_paper"
 MANIFEST = ROOT / "paper_static" / "runs_4b.jsonl"
 
-R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/jev"
+R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev"
 V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
 M = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B"
 
