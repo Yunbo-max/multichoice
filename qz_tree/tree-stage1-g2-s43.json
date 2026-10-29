@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "tree-stage1-g2-s43",
+  "description": "Paper 2 Stage 1 G2: Valen 30k full batched SFT (cache, batch 8), seed 43, 1xH100",
+  "framework": "pytorch",
+  "command": "set -uo pipefail\nR=/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\nV=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii\nM=/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B\nexport HF_HUB_OFFLINE=1\nexport TRANSFORMERS_OFFLINE=1\nexport PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True\nexport PYTHONPATH=\"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\"\nrm -rf \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/tree/stage1_g2_s43\"\nmkdir -p \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/logs/qz\"\ncd \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\"\n\"$V/bin/python\" -m treejev.train_visual_action --train \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/tree/valen_split/train_visual.jsonl\" --dev \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/tree/valen_split/dev_visual.jsonl\" --model \"/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B\" --modules \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/innerjev/configs/4B/modules.json\" --output \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/tree/stage1_g2_s43\" --seed 43 --limit 0 --dev-limit 64 --max-steps 3750 --batch-size 8 --cache-dir \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/tree/valen_cache_train\" --local-files-only > \"/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/logs/qz/tree-stage1-g2-s43.log\" 2>&1\nstatus=$?; echo \"JOB EXIT=$status\"; exit $status\n",
+  "max_running_time_ms": "10800000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}

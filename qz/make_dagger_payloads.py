@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "qz_dagger"
 
-R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/multichoice_publish"
+R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev"
 V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
 MODEL = f"{R}/runs/qz/grouped_bce_4gpu_s44/v1/final"
 DATA = f"{R}/runs/episodic_data_shift_v5"
