@@ -43,23 +43,29 @@ within the ~3h per-job limit.
 | 45 | 2700 | 0.7969 | 0.5203 | 0.7616 |
 | mean | — | **0.8229** | 0.5548 | 0.7609 |
 
+## G2 full 30k cached result (batch 8, 3375 steps, seed 45)
+
+Caching the processor features (`treejev.cache_valen_features`) removes the CPU
+image-preprocessing bottleneck, so a single job exhausts the full 26,999-row
+train set (3375 optimizer steps).
+
+| seed | optimizer steps | action-optimal accuracy | soft CE | mass on optimal |
+|---|---:|---:|---:|---:|
+| 45 | 3375 | **0.8594** | 0.6178 | 0.7341 |
+
 `action-optimal accuracy` counts a win whenever argmax over the four restricted
 native logits is ANY tied optimal move. Random chance is roughly 0.25–0.29 (most
 boards have a single optimal action; the multi-optimal fraction is ~15%).
 
 ## Interpretation
 
-The LoRA action policy reaches ~82% held-out-board accuracy versus ~25–29%
-chance after 2700 batched steps (~21.6k of 30k images), up from ~71% at 250
-steps. This is a single-action softmax policy trained on all tied-optimal moves,
-not the set-readout policy of Stage 3 and not any branching or RL. It demonstrates
-that the multimodal processor path and the restricted A/B/C/D next-token scoring
-are sound, and that the model learns a strong visual action policy on unseen
-layouts.
-
-The remaining gap to the full 30k is the CPU image-preprocessing cost
-(resize/patch), not the GPU forward. Caching the processor output would remove
-that bottleneck and let a single job exhaust all 30k rows.
+The LoRA action policy reaches ~86% held-out-board accuracy versus ~25–29%
+chance on the full 30k train set, up from ~71% at 250 steps and ~82% at ~72% of
+the data. This is a single-action softmax policy trained on all tied-optimal
+moves, not the set-readout policy of Stage 3 and not any branching or RL. It
+demonstrates that the multimodal processor path and the restricted A/B/C/D
+next-token scoring are sound, and that the model learns a strong visual action
+policy on unseen layouts.
 
 Remaining Stage 1 questions (per `paper_tree/EXPERIMENTS.md` G2): comparison
 against one-random-optimal CE and BCE-multihot-set, and the balanced by-`#optimal`
