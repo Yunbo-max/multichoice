@@ -1365,6 +1365,8 @@ def main():
     parser.add_argument("--objective", choices=["bce", "set", "pair"], default="bce")
     parser.add_argument("--pair-pairs", type=int, default=0,
                         help="pair objective: number of upper-triangle J logits (K*(K-1)//2)")
+    parser.add_argument("--pair-lr-mult", type=float, default=1.0,
+                        help="pair objective: multiplier on the pair-head learning rate")
     parser.add_argument(
         "--set-loss",
         choices=["set_ce", "independent_marginal", "induced_marginal"],
@@ -1797,14 +1799,26 @@ def main():
 
         model = DDP(wrapper.to(device), device_ids=[local], broadcast_buffers=False)
     params = [parameter for parameter in model.parameters() if parameter.requires_grad]
-    optimizer = torch.optim.AdamW(
-        params,
-        lr=args.lr,
-        betas=(0.9, 0.999),
-        eps=1e-8,
-        weight_decay=0.0,
-        foreach=False,
-    )
+    if args.objective == "pair" and args.pair_lr_mult != 1.0:
+        pair_params = [p for n, p in model.named_parameters()
+                       if p.requires_grad and "pair_head" in n]
+        other_params = [p for n, p in model.named_parameters()
+                        if p.requires_grad and "pair_head" not in n]
+        optimizer = torch.optim.AdamW(
+            [{"params": other_params, "lr": args.lr, "base_lr": args.lr},
+             {"params": pair_params, "lr": args.lr * args.pair_lr_mult,
+              "base_lr": args.lr * args.pair_lr_mult}],
+            betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0, foreach=False,
+        )
+    else:
+        optimizer = torch.optim.AdamW(
+            params,
+            lr=args.lr,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=0.0,
+            foreach=False,
+        )
 
     writer = None
     if rank == 0:
@@ -2011,7 +2025,7 @@ def main():
         begin = time.monotonic()
         count = len(indices)
         for group in optimizer.param_groups:
-            group["lr"] = args.lr * lr_factor(step, planned_steps)
+            group["lr"] = group.get("base_lr", args.lr) * lr_factor(step, planned_steps)
         optimizer.zero_grad(set_to_none=True)
         partitions, micro = split_batch(
             indices, train_lengths, world, args.max_batch_tokens, args.global_batch
