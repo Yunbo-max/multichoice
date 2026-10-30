@@ -599,12 +599,13 @@ def pair_loss_terms(
             head = torch_count_anchor_logits(anchor_scores, head)
         n_pairs = k * (k - 1) // 2
         plog = pair_logits[i, :n_pairs].float()
-        J = scores.new_zeros(k, k)
-        ii = [a for a in range(k) for b in range(a + 1, k)]
-        jj = [b for a in range(k) for b in range(a + 1, k)]
-        for n, (a, b) in enumerate(zip(ii, jj)):
-            J[a, b] = plog[n]
-            J[b, a] = plog[n]
+        ii_t = torch.tensor([a for a in range(k) for b in range(a + 1, k)],
+                            dtype=torch.long, device=scores.device)
+        jj_t = torch.tensor([b for a in range(k) for b in range(a + 1, k)],
+                            dtype=torch.long, device=scores.device)
+        J = torch.zeros(k, k, dtype=scores.dtype, device=scores.device)
+        J = J.index_put((ii_t, jj_t), plog)
+        J = J.index_put((jj_t, ii_t), plog)
         logz = torch_pairwise_log_partition(scores, head, J, set(support))
         gold = row["target"]
         sel = [a for a, y in enumerate(gold) if y]
