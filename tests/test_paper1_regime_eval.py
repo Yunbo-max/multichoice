@@ -46,6 +46,7 @@ class RegimeScoreTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["mean_joint_kl"],0,places=9)
         self.assertAlmostEqual(metrics["mean_count_kl"],0,places=9)
         self.assertTrue(result["not_a_learned_pair_result"])
+        self.assertAlmostEqual(metrics["mean_edge_f1"],1.0)
 
     def test_wrong_matching_changes_joint_quality(self):
         predictions=[dict(p,predicted_pairs=[[0,2],[1,3]],
@@ -53,6 +54,7 @@ class RegimeScoreTests(unittest.TestCase):
         result=evaluator.evaluate(self.rows,[self.teacher],predictions,"pair","dev")
         self.assertGreater(result["metrics_by_regime"]["R"]["mean_joint_kl"],.05)
         self.assertFalse(result["not_a_learned_pair_result"])
+        self.assertAlmostEqual(result["metrics_by_regime"]["R"]["mean_edge_f1"],0.0)
 
     def test_no_predictions_missing_or_test_leak(self):
         with self.assertRaisesRegex(ValueError,"missing"):
