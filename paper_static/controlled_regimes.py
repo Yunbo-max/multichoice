@@ -39,7 +39,7 @@ def matchings(nodes):
 
 
 def pairing_pools(k):
-    if k%2 or not 4<=k<=10:
+    if k%2 or not 6<=k<=10:
         raise ValueError("generator uses even K in [4,10]; 255 scaling is a separate DP check")
     pools={"train":[],"dev":[],"test":[]}
     for matching in matchings(range(k)):
@@ -53,14 +53,16 @@ def pairing_pools(k):
     return pools
 
 
-def _options(rng,k,tags=None):
+def _options(rng,k,tags=None, utilities=None):
     order=list(range(k))
     rng.shuffle(order)
     if tags is None:
         tags=["none"]*k
-    # Randomized option wording/order, independent of the target subset.
+    if utilities is None:
+        utilities=[0]*k
+    # Expose observable features, not teacher logits; shuffle irrelevant IDs only.
     return [{"key":ALPHABET[i],
-             "text":f"Candidate {order[i]:02d}, preference {rng.randrange(-3,4)}, "
+             "text":f"Candidate {order[i]:02d}, utility feature {utilities[i]}, "
                     f"compatibility code {tags[i]}"} for i in range(k)]
 
 
@@ -79,7 +81,7 @@ def _sha(path):
 
 
 def generate(out, *, seed=20261030, ntrain=240, ndev=60, ntest=60, repeats=4, k=8):
-    if k not in (4,6,8,10) or any(type(v) is not int or v<=0
+    if k not in (6,8,10) or any(type(v) is not int or v<=0
        for v in (ntrain,ndev,ntest,repeats)):
         raise ValueError("invalid K or context count")
     out=Path(out)
@@ -98,7 +100,8 @@ def generate(out, *, seed=20261030, ntrain=240, ndev=60, ntest=60, repeats=4, k=
                 cid=f"{split}-{regime}-{t:05d}"
                 assert cid not in seen_contexts
                 seen_contexts.add(cid)
-                scores=[round(.8*rng.uniform(-1.5,1.5),3) for _ in range(k)]
+                utilities=[rng.choice([-2,-1,0,1,2]) for _ in range(k)]
+                scores=[0.8*u for u in utilities]
                 residual=[0.0]*(k+1)
                 weights=[]
                 pairings=[]
@@ -108,26 +111,31 @@ def generate(out, *, seed=20261030, ntrain=240, ndev=60, ntest=60, repeats=4, k=
                     # Count-only dependence is identifiable without oracle counts in prompts.
                     load=rng.choice(["low","medium","high"])
                     center={"low":1.8,"medium":k*.48,"high":k*.75}[load]
-                    strength=rng.choice([.5,1.0,1.8])
+                    strength_label=rng.choice(["mild","medium","strong"])
+                    strength={"mild":.5,"medium":1.0,"strong":1.8}[strength_label]
                     residual=[-strength*(m-center)**2 for m in range(k+1)]
-                    rule=f"Shared workload regime {load}: answer counts exhibit collective pressure."
+                    rule=(f"Shared workload regime {load}; collective pressure {strength_label}. "
+                          "Option utility features are assessed jointly.")
                 elif regime=="R":
                     # Make q_i and count rho invariant to matching *re-wiring*.
                     scores=[0.0]*k
+                    utilities=[0]*k
                     pairings=list(rng.choice(pools[split]))
                     used_graphs[split].add(tuple(pairings))
-                    strength=rng.choice([1.5,3.0,4.5])
+                    strength_label=rng.choice(["mild","medium","strong"])
+                    strength={"mild":1.5,"medium":3.0,"strong":4.5}[strength_label]
                     weights=[strength]*len(pairings)
                     residual=[-.9*(m-2.0)**2 for m in range(k+1)]
                     for pair_number,(i,j) in enumerate(pairings):
                         code=f"g{pair_number:02d}"
                         tags[i]=tags[j]=code
-                    rule="Items sharing a compatibility code tend to be accepted together."
+                    rule=(f"Items sharing a compatibility code tend to be accepted together; "
+                          f"coupling strength {strength_label}.")
                     load="paired"
                 else:
                     load="independent"
                     rule="Each candidate is accepted or rejected independently."
-                options=_options(rng,k,tags)
+                options=_options(rng,k,tags,utilities)
                 matrix=[[0.0]*k for _ in range(k)]
                 for (i,j),weight in zip(pairings,weights):
                     matrix[i][j]=matrix[j][i]=weight
