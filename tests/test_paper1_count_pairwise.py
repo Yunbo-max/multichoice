@@ -140,6 +140,7 @@ class PairwiseExactTests(unittest.TestCase):
         self.assertTrue(result["pairwise_training_decreased_nll"])
         self.assertAlmostEqual(result["nll"]["bce"],math.log(16))
         self.assertAlmostEqual(result["nll"]["anchor_fixed_count"],math.log(6))
+        self.assertAlmostEqual(result["nll"]["bce_protocol_matched"],math.log(6))
         self.assertLess(result["nll"]["pairwise_fit"],0.73)
         self.assertLess(result["probability_on_invalid_2_sets"]["pairwise_fit"],0.02)
         self.assertAlmostEqual(result["probability_on_invalid_2_sets"]["anchor_fixed_count"],2/3)
