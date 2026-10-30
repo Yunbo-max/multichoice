@@ -155,16 +155,26 @@ python -m unittest discover -s tests -p 'test_paper1_*' -v
 ~~~
 
 For a meaningful 4B LoRA fit rather than the small CPU smoke, generate a
-separate, predeclared dataset directory with
-`--ntrain 2400 --ndev 500 --ntest 500 --repeats 4`. The
-**same** train/dev files and CPU/GPU budgets must be used for every arm.
+separate, predeclared dataset directory. The default small pilot has only
+2,880 train rows / 45 batch-64 updates, so it **cannot** run 450 warm steps.
+The planner rejects an insufficient update budget rather than silently
+running fewer updates.
+
+~~~bash
+python -m paper_static.controlled_regimes --output-dir runs/regimes_4b \
+  --seed 20261030 --k 8 --ntrain 2400 --ndev 500 --ntest 500 --repeats 4
+# 3 regimes x 2,400 contexts x 4 stochastic draws = 28,800 train rows
+# 28,800 / batch 64 = 450 full optimizer updates
+~~~
+
+The **same** train/dev files and CPU/GPU budgets must be used for every arm.
 
 Create 13 *plan-only* command arrays (one BCE warm prerequisite + 4 methods
 times 3 seeds), no QZ submission and no fabricated checkpoints:
 
 ~~~bash
 python -m paper_static.plan_regime_pilots \
-  --data-dir runs/regimes_v1 \
+  --data-dir runs/regimes_4b \
   --model /path/to/Qwen3.5-4B \
   --output runs/paper1_plan/controlled_4b.json \
   --seeds 43 44 45 --warm-steps 450 --continuation-steps 100
