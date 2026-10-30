@@ -112,11 +112,13 @@ def demo():
     gold={0b0011:0.5, 0b1100:0.5}  # {A,B} or {C,D}; other 2-sets invalid.
     scores=[0.0]*k
     bce=exact_distribution(scores)
+    bce_protocol_matched=exact_distribution(scores,counts=[2])
     anchor=exact_distribution(scores,counts=[2])
     fitted,history=fit_pairs_fixed_scores(scores,gold,[2])
     pair=exact_distribution(scores,interactions=fitted,counts=[2])
     return {"status":"SYNTHETIC_ONLY_NOT_GPU_RESULT", "gold_sets":["AB","CD"],
             "k":k,"nll":{"bce":dataset_nll(bce,gold),
+                       "bce_protocol_matched":dataset_nll(bce_protocol_matched,gold),
                        "anchor_fixed_count":dataset_nll(anchor,gold),
                        "pairwise_fit":dataset_nll(pair,gold)},
             "probability_on_invalid_2_sets":{
