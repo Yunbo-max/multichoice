@@ -131,6 +131,10 @@ def evaluate(students,oracles,predictions,mode,split):
                   sum(weight*mat[i][j] for (i,j),weight in zip(pairs,weights)))
         count_ce=-sum(p*lp for p,lp in zip(rho,out["count_log_probs"]) if p>0)
         count_entropy=-sum(p*math.log(p) for p in rho if p>0)
+        joint_gap=joint_ce-entropy
+        count_gap=count_ce-count_entropy
+        if joint_gap < -1e-6 or count_gap < -1e-6:
+            raise ValueError("negative KL beyond rounding tolerance: oracle/decoder mismatch")
         sampled_nll=sum(exact_subset_nll(scores,r["target"],pairs,weights,residual)
                         for r in rows)/len(rows)
         pair_metrics={}
@@ -145,8 +149,8 @@ def evaluate(students,oracles,predictions,mode,split):
         records.append({"context":cid,"regime":truth["regime"],
                         "k":k,"strength":truth["strength"],"draws":len(rows),
                         "edge_source":edge_source,"joint_ce":joint_ce,
-                        "joint_kl":max(-1e-9,joint_ce-entropy),
-                        "count_ce":count_ce,"count_kl":max(-1e-9,count_ce-count_entropy),
+                        "joint_kl":max(0.0,joint_gap),
+                        "count_ce":count_ce,"count_kl":max(0.0,count_gap),
                         "sampled_set_nll":sampled_nll,**pair_metrics})
     groups={}
     for regime in ("I","C","R"):
