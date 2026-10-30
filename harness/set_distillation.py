@@ -210,12 +210,14 @@ def structured_marginals(scores, count_probs):
     return [min(1.0, max(0.0, v)) for v in p]
 
 
-def structured_prediction(scores, count_logits, row, count_anchor=False):
+def structured_prediction(scores, count_logits, row, count_anchor=False, zero_count_head=False):
     """Coherent marginals and exact set MAP; never uses the gold answer count."""
     k = len(scores)
     if k != len(row["options"]) or len(count_logits) < k + 1:
         raise ValueError("readout dimensions do not match options")
     support = allowed_counts(row)
+    if zero_count_head:
+        count_logits = [0.0] * len(count_logits)
     if count_anchor:
         count_logits = count_anchor_logits(scores, count_logits)
     if any(not math.isfinite(count_logits[m]) for m in support):
