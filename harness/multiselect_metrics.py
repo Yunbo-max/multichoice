@@ -244,6 +244,10 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
                      "checkpoint_id", "provenance"):
             if name in item:
                 record[name] = item[name]
+        if "count_residual_logits" in item:
+            record["count_residual_logits"] = _numbers(
+                item["count_residual_logits"], k + 1, ident, "count_residual_logits"
+            )
         if item.get("decoder") == "set_map" and "count_probs" not in item:
             raise ValueError(f"{ident}: a structured set_map prediction requires count_probs")
         if "count_probs" in item:
