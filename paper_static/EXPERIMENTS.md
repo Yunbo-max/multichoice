@@ -1,5 +1,29 @@
 # Paper 1 — Count-Anchored SetJev: locked experimental protocol (2026-10-27)
 
+## Controlled three-regime experiment, v2 (2026-10-30)
+
+Authoritative new research design:
+[Independent / Cardinality / Pairwise hypotheses and rejection gates](../docs/paper1_three_regime_research_design.md).
+
+Runnable components now in this branch:
+- `paper_static/controlled_regimes.py`: context-/pair-structure-disjoint
+  synthetic I/C/R train/dev/test data with exact oracle held apart from prompts.
+- `paper_static/regime_oracle_check.py`: ideal-family NLL/KL
+  ceilings with no learned model; only proof/diagnostic evidence.
+- `paper_static/block_pair_dp.py`: exact matching-block
+  O(K²) log partition, count probabilities and MAP through K=255;
+  differentiable torch logZ reference, not an end-to-end learned router.
+- `paper_static/regime_eval.py`: evaluate proper expected
+  joint NLL and count NLL against separately stored oracle moments for future
+  BCE/Anchor/Pair readout exports.
+- `tests/test_paper1_{controlled_regimes,oracle_capacity,regime_eval}.py`:
+  regression contracts (run in real CPU environment before GPU use).
+
+All new Qwen model training, actual 255-option inference, learned matching,
+and genuine held-out improvements remain UNRUN/UNVERIFIED. Existing S44
+BCE checkpoint comparisons continue to be the experimental reference,
+not evidence of independently trained full 4B Pairwise model.
+
 ## October 30 update: matched TEST complete; DEV audit and pairwise reference added
 
 The original 8 arms x 3 seeds are complete. Frozen TEST (2,140 questions) was run once; anchor Set CE has exact-set EM 0.6173 vs BCE continuation 0.6182 and independent count-head Set CE 0.4005. These are warm-started comparisons with the same S44 BCE checkpoint, not a 5k-sample from-scratch improvement. Never tune a loss, threshold, gating strategy or method on the already opened TEST.
