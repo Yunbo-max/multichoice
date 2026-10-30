@@ -39,14 +39,14 @@ def plan(data_dir,model,modules,root,bce_checkpoint,seeds=(43,44,45),
         raise ValueError("generate controlled regime data first, with student/train.jsonl and dev.jsonl")
     if stage1_steps<1 or stage2_steps<1 or batch<1 or lr<=0:
         raise ValueError("invalid common training budget")
+    if not seeds or len(set(seeds))!=len(seeds):
+        raise ValueError("invalid paired seed list")
     with train.open("r",encoding="utf-8") as stream:
         ntrain=sum(bool(line.strip()) for line in stream)
     available_steps=(ntrain+batch-1)//batch
     if max(stage1_steps,stage2_steps)>available_steps:
         raise ValueError(f"only {available_steps} updates available for {ntrain} training rows; "
                          "regenerate larger ntrain or lower requested step budgets")
-    if not seeds or len(set(seeds))!=len(seeds):
-        raise ValueError("invalid paired seed list")
     common=["--train",str(train),"--dev",str(dev),"--modules",str(modules),
             "--target","gold","--global-batch",str(batch),
             "--epochs","1","--eval-every-frac","1.0",

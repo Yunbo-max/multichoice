@@ -110,7 +110,7 @@ def example_regimes():
                       "oracle_pairwise_excess_joint_kl":pair_oracle-qrr["entropy"],
                       "marginals_and_count_invariant_under_rewiring":True,
                       "cooccurrence_p_AB_original":qrr["true_pairwise_marginals"][0][1],
-                      "cooccurrence_p_AB_rewired":q2["true_pairwise_marginals"][0][1]}}},
+                       "cooccurrence_p_AB_rewired":q2["true_pairwise_marginals"][0][1]}},
       "warning":"Oracle variables generate/evaluate the synthetic law; no learned Qwen model, real-world win, or 255-option training."}
 
 

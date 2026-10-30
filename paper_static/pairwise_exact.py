@@ -41,8 +41,10 @@ def _validate(scores, residual, interactions, counts):
     return residual, interactions, counts
 
 
-def exact_distribution(scores, residual=None, interactions=None, counts=None):
+def exact_distribution(scores, residual=None, interactions=None, counts=None, allowed=None):
     """Return a normalized dict {subset_bitmask: probability}, K<=12."""
+    if allowed is not None:
+        counts = allowed
     residual, interactions, allowed = _validate(scores, residual, interactions, counts)
     k=len(scores)
     energies={}

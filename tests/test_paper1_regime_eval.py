@@ -21,6 +21,7 @@ class RegimeScoreTests(unittest.TestCase):
         q=dense.exact_distribution(self.scores,self.residual,J)
         m=dense.moments(q,self.k)
         self.teacher={"context_id":"dev-R-0000","regime":"R","strength":1.0,
+            "teacher_pairs":[list(p) for p in self.pairs],
             "true_marginals":m["marginals"],"true_count_probs":m["count_probs"],
             "true_pairwise_marginals":m["pairwise_marginals"],
             "true_set_probs":{str(k):v for k,v in q.items()}}
