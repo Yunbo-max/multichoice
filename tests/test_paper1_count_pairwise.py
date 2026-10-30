@@ -74,6 +74,35 @@ class CountAuditTests(unittest.TestCase):
             audit.paired_rows([z[0] for z in data],[z[1] for z in data],
                               [z[2] for z in data[:-1]],43)
 
+    def test_cli_three_seed_saved_predictions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            gold=[self._row(i)[0] for i in range(8)]
+            gold_path=root/"dev.jsonl"
+            gold_path.write_text("".join(json.dumps(x)+"\n" for x in gold),encoding="utf-8")
+            for seed in (43,44,45):
+                examples=[self._row(i,seed) for i in range(8)]
+                for arm,index in (("bce_continue",1),("set_ce_anchor",2)):
+                    dest=root/"pred"/f"seed_{seed}"/arm/"predictions.jsonl"
+                    dest.parent.mkdir(parents=True,exist_ok=True)
+                    dest.write_text("".join(json.dumps(r[index])+"\n" for r in examples),encoding="utf-8")
+            summary=root/"count_report.json"
+            audit.main(["--gold",str(gold_path),"--predictions-root",str(root/"pred"),
+                       "--output",str(summary),"--bootstrap","10"])
+            result=json.loads(summary.read_text())
+            self.assertEqual(result["status"],"COMPLETE")
+            self.assertEqual(len(result["seeds"]),3)
+            self.assertTrue(all(v["overall"]["n"]==8 for v in result["seeds"].values()))
+            with self.assertRaises(SystemExit):
+                audit.main(["--gold",str(gold_path),"--predictions-root",str(root/"pred"),
+                           "--output",str(summary)])
+
+    def test_anchor_residual_is_input_dependent_not_only_bias(self):
+        r,b,a=self._row(0)
+        a["count_residual_logits"]=[0.0,0.3,-0.5,0.6]
+        stat=audit.paired_rows([r],[b],[a],43)
+        self.assertAlmostEqual(stat[0]["anchor_residual_span"],1.1)
+
     def test_reject_test_leak_and_checkpoint_mismatch(self):
         r,b,a=self._row(0)
         with self.assertRaisesRegex(ValueError,"checkpoint"):
