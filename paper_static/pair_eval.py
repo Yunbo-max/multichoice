@@ -63,7 +63,8 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     import train_multiselect as trainer
-    from set_distillation import exact_distribution, log_partitions
+    from set_distillation import log_partitions
+    from pairwise_exact import exact_distribution
     from multiselect_metrics import read_dataset
     from eval_multiselect import make_batches, validate_right_padding, checkpoint_count_anchor
     from transformers import AutoConfig, AutoTokenizer, Qwen3_5ForConditionalGeneration, Qwen3_5ForCausalLM
