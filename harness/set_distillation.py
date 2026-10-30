@@ -378,6 +378,41 @@ def torch_log_partitions(scores, return_table=False):
     return table if return_table else old
 
 
+def torch_pairwise_log_partition(scores, residual, J, allowed):
+    """Autograd-safe full-enumeration log Z with dense pairwise terms (K <= 12).
+
+    Z = sum_{S in allowed} exp(sum_i s_i y_i + a_|S| + sum_{i<j} J_ij y_i y_j).
+    Used for the E3 learned-pair regime on small K; the disjoint block DP
+    (paper_static/block_pair_dp.py) handles K up to 255 separately.
+    """
+    import torch
+
+    k = scores.numel()
+    if k > 12 or k < 1:
+        raise ValueError("full pairwise enumeration requires 1 <= K <= 12")
+    idx = torch.arange(k, device=scores.device)
+    masks = torch.arange(1 << k, device=scores.device)
+    bits = ((masks[:, None] >> idx) & 1).float()  # [2^k, k]
+    counts = bits.sum(dim=1).long()               # [2^k]
+    allowed_mask = torch.tensor(
+        [int(m) in set(allowed) for m in counts.tolist()], device=scores.device
+    )
+    s_contrib = bits @ scores                       # [2^k]
+    a_contrib = residual[counts]                    # [2^k]
+    ii = [i for i in range(k) for j in range(i + 1, k)]
+    jj = [j for i in range(k) for j in range(i + 1, k)]
+    if ii:
+        ii = torch.tensor(ii, device=scores.device)
+        jj = torch.tensor(jj, device=scores.device)
+        pair_contrib = (bits[:, ii] * bits[:, jj]) @ J[ii, jj]  # [2^k]
+    else:
+        pair_contrib = scores.new_zeros(1 << k)
+    energy = s_contrib + a_contrib + pair_contrib
+    energy = torch.where(allowed_mask, energy, torch.full_like(energy, -torch.inf))
+    maximum = energy.max()
+    return maximum + torch.logsumexp(energy - maximum, dim=0)
+
+
 def count_anchor_logits(scores, count_logits):
     """Residual count logits: correction[m] + log Z_m(raw candidate scores).
 
@@ -528,6 +563,61 @@ def set_loss_terms(
                 loss = marginal_ce / k + count_weight * count_ce
         losses.append(loss)
         bces.append(bce.detach())  # diagnostic sigmoid BCE, not structured marginals
+        count_ces.append(count_ce)
+    return torch.stack(losses), torch.stack(bces), torch.stack(count_ces)
+
+
+def pair_loss_terms(
+    label_logits,
+    count_logits,
+    pair_logits,
+    rows,
+    *,
+    count_anchor=False,
+    count_anchor_detach=False,
+):
+    """Per-row learned-pair set objective: log Z - gold energy, dense J (K<=12).
+
+    E3 only: the pair head emits upper-triangle J logits; this routine builds the
+    symmetric J matrix, computes the differentiable full-enumeration log partition
+    (torch_pairwise_log_partition), and returns proper joint set CE plus a BCE
+    diagnostic and an unweighted count-CE diagnostic. Not used for the 255-option
+    disjoint block DP.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    losses, bces, count_ces = [], [], []
+    for i, row in enumerate(rows):
+        k = len(row["options"])
+        scores = label_logits[i, :k].float()
+        q = scores.new_tensor(row["train_target"])
+        support = allowed_counts(row)
+        head = count_logits[i, : k + 1].float()
+        if count_anchor:
+            anchor_scores = scores.detach() if count_anchor_detach else scores
+            head = torch_count_anchor_logits(anchor_scores, head)
+        n_pairs = k * (k - 1) // 2
+        plog = pair_logits[i, :n_pairs].float()
+        J = scores.new_zeros(k, k)
+        ii = [a for a in range(k) for b in range(a + 1, k)]
+        jj = [b for a in range(k) for b in range(a + 1, k)]
+        for n, (a, b) in enumerate(zip(ii, jj)):
+            J[a, b] = plog[n]
+            J[b, a] = plog[n]
+        logz = torch_pairwise_log_partition(scores, head, J, set(support))
+        gold = row["target"]
+        sel = [a for a, y in enumerate(gold) if y]
+        energy = sum(scores[a] for a in sel) + head[len(sel)]
+        energy = energy + sum(J[a, b] for idx, a in enumerate(sel) for b in sel[idx + 1 :])
+        loss = (logz - energy) / k
+        bce = F.binary_cross_entropy_with_logits(scores, q, reduction="mean")
+        index = torch.tensor(support, dtype=torch.long, device=scores.device)
+        log_count = F.log_softmax(head[index], dim=0)
+        rho = scores.new_tensor(row["train_count_probs"])
+        count_ce = -(rho[index] * log_count).sum() / k
+        losses.append(loss)
+        bces.append(bce.detach())
         count_ces.append(count_ce)
     return torch.stack(losses), torch.stack(bces), torch.stack(count_ces)
 
