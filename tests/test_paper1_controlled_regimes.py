@@ -132,6 +132,16 @@ class RegimeGeneration(unittest.TestCase):
                 self.assertEqual(len(data),len(oracle)*3)
                 self.assertTrue(all(row["split"]==split and row["allow_empty"] for row in data))
                 self.assertTrue(all("teacher_scores" not in row for row in data))
+                # The generator must satisfy the production Qwen train schema,
+                # not merely an ad-hoc synthetic simulator format.
+                try:
+                    from harness.train_multiselect import validate_row
+                except ImportError:
+                    validate_row=None  # optional when torch is absent on CPU
+                if validate_row is not None:
+                    for example in data:
+                        errors,_=validate_row(example,split,"controlled")
+                        self.assertEqual(errors,[],msg=str(errors))
                 contexts={r["group_id"] for r in data}
                 self.assertFalse(contexts & seen)
                 seen|=contexts
