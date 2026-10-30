@@ -14,8 +14,10 @@
 Run at the QZ checkout of research/static-setjev-paper-20261027 after confirming that all six frozen trained checkpoint directories exist. Source templates are the existing qz_static_eval/paper1-eval-*.json TEST jobs; the generator *converts* them to DEV, verifies branch, refuses an existing output directory, and removes the original rm -rf behavior. **It never submits any job.**
 
 ~~~bash
-python -m paper_static.plan_dev_eval --output-dir qz_static_count_dev
-# Inspect each generated job and launch separately (requires QZ login and compute):
+# Six pre-generated QZ DEV payloads are already committed in qz_static_count_dev/.
+# Optional: regenerate safely into a NEW folder, without overwriting the committed versions:
+python -m paper_static.plan_dev_eval --output-dir qz_static_count_dev_regenerated
+# Inspect the committed payloads and launch separately (requires QZ login and compute):
 qz train CreateJob --data "$(cat qz_static_count_dev/paper1-dev-bce_continue-s43.json)"
 qz train CreateJob --data "$(cat qz_static_count_dev/paper1-dev-set_ce_anchor-s43.json)"
 # Repeat for s44 and s45; check job exit codes, logs and predictions.jsonl.
