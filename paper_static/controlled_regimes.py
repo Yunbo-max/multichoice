@@ -62,7 +62,7 @@ def _options(rng,k,tags=None, utilities=None):
         utilities=[0]*k
     # Expose observable features, not teacher logits; shuffle irrelevant IDs only.
     return [{"key":ALPHABET[i],
-             "text":f"Candidate {order[i]:02d}, utility feature {utilities[i]}, "
+             "desc":f"Candidate {order[i]:02d}, utility feature {utilities[i]}, "
                     f"compatibility code {tags[i]}"} for i in range(k)]
 
 
@@ -143,7 +143,8 @@ def generate(out, *, seed=20261030, ntrain=240, ndev=60, ntest=60, repeats=4, k=
                 stats=moments(truth,k)
                 public={"state":f"Selection task. {rule} Workload={load}.",
                         "question":"Select all appropriate candidates; zero selections are allowed.",
-                        "options":options,"selection_mode":"multi","allow_empty":True}
+                        "options":options,"n_options":k,
+                        "selection_mode":"multi","allow_empty":True}
                 oracle[split].append({
                     "context_id":cid,"regime":regime,"strength":strength,
                     "teacher_scores":scores,"teacher_residual":residual,
@@ -157,7 +158,8 @@ def generate(out, *, seed=20261030, ntrain=240, ndev=60, ntest=60, repeats=4, k=
                     item={**public,"id":f"{cid}/draw-{repeat:02d}",
                           "group_id":cid,"source":f"controlled_{regime}",
                           "lang":"en","split":split,
-                          "target":[int(bool(sample>>i&1)) for i in range(k)]}
+                          "target":[int(bool(sample>>i&1)) for i in range(k)],
+                          "gold_letters":"".join(ALPHABET[i] for i in range(k) if sample>>i&1)}
                     paths[split].append(item)
     # Split is context-disjoint AND pair-matching topology-disjoint in R.
     if any(used_graphs[a]&used_graphs[b]
