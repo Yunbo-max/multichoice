@@ -1,60 +1,27 @@
-# Paper 1 — Option-independence audit: why anchoring ties but cannot beat BCE
+# Paper 1 — Option independence: preliminary audit, **not proof** (2026-10-30)
 
-Branch: `research/static-setjev-paper-20261027`. Date: 2026-10-30.
-Why does the anchored set objective reach BCE's EM but never exceed it? The audit
-below shows the multi-select datasets are effectively **option-independent**, so
-the independent-sigmoid BCE is already the correct model and the set objective's
-count coupling has nothing extra to fit.
+**Correction:** an earlier version of this document concluded that CMB/MultiRC options are conditionally independent, based on aggregate count frequencies and an all-zero saved count-head **bias**. Neither observation establishes that conclusion.
 
-## Evidence 1 — count distribution is Poisson-binomial
+## What was actually observed
 
-If correct options were independent, the gold-count distribution equals the
-Poisson-binomial law induced by per-option correctness probabilities q_i. Using
-the BCE checkpoint's independent probabilities q_i on Test, the induced count
-distribution matches the empirical gold-count distribution closely:
+- The average TEST histogram of the gold number of selected answers and the Poisson-binomial count histogram induced by BCE are close (largest reported count-frequency discrepancy about 2.5 percentage points).
+- On the frozen, already-opened 2,140-question TEST, anchored Set CE roughly ties BCE continuation: exact-set EM 0.6173 versus 0.6182; independent count-head Set CE scores 0.4005.
+- The reported count-head *bias* vector was zero for inspected checkpoints. This is not a measurement of a_m(x)=W_m h(x)+b_m. A zero bias is compatible with a nonzero, input-dependent residual and could also expose a training/export bug if all parameters are unexpectedly constant.
 
-| gold count | empirical | independent (Poisson-binomial) |
-|---|---:|---:|
-| 1 | 0.1505 | 0.1251 |
-| 2 | 0.2864 | 0.2714 |
-| 3 | 0.2995 | 0.3159 |
-| 4 | 0.1949 | 0.2095 |
-| 5 | 0.0640 | 0.0698 |
+## Why the prior inference was invalid
 
-Largest deviation ~2.5pp. The number of correct answers is essentially determined
-by the independent per-option probabilities; there is no additional count prior.
+Matching **aggregate** count distributions does not prove that Y_i and Y_j are conditionally independent given the full question/context x. Different joint set laws can have the same option marginals and cardinality law. For example, the distribution with equal mass on AB and CD and the distribution with equal mass on AC and BD have identical membership and count statistics yet different co-occurrence rules.
 
-## Evidence 2 — the anchor's learned count correction a_m is zero
+With full count support, setting the anchor residual to zero reduces its *probability law* to BCE; with nonempty support, it reduces to BCE conditioned on nonempty sets. However the optimization gradient of a trained full anchor may differ and the input-dependent head has not yet been verified to be negligible.
 
-The anchored law is `rho(m) ∝ exp(log Z_m(s) + a_m)`. The count head's learned
-bias (the residual `a_m`) is all zeros after training:
+## Required follow-up, using DEV only
 
-```
-set_ce_anchor    count head bias[:8] = [0, 0, 0, 0, 0, 0, 0, 0], max 0.0 min -0.0
-set_ce_independent count head bias[:8] = [0, 0, 0, 0, 0, 0, 0, 0], max 0.0 min -0.0
-induced_anchor   count head bias[:8] = [0, 0, 0, 0, 0, 0, 0, 0], max 0.0 min -0.0
-```
+See [the executable count and pairwise audit](paper1_count_pairwise_protocol.md). It adds (1) per-question BCE gold-count NLL quartiles; (2) paired same-example delta EM and count NLL with passage-group bootstrap and matched seeds; (3) direct residual output a_m(x) in the exported evaluator; (4) frozen-candidate zero-residual ablation; (5) a synthetic exact pairwise counterexample.
 
-There is no count prior to learn. `log Z_m(s)` — the count distribution implied by
-the candidate scores alone — is already the correct count law, because the data
-options are independent.
-
-## Conclusion
-
-1. **The data is option-independent**, so BCE (independent sigmoid) is the
-   well-specified model and the set objective's count coupling is redundant.
-2. **Anchoring recovers BCE, it does not beat it.** Anchoring the count to
-   `log Z_m(s)` is exactly what fixes the independent count head's failure (48%
-   over-selection, count MAE 1.0), because that term is the correct independent
-   count law. With `a_m = 0` the anchored set readout degenerates to the
-   independent-sigmoid answer, which is why EM ties BCE.
-3. **The set objective's real value is in tasks where options genuinely
-   co-vary** — e.g. Paper 2's Sokoban, where "which moves are optimal" and "how
-   many moves are optimal" are strongly coupled. On option-independent
-   multi-select, the set objective is a well-controlled degeneracy baseline, not
-   a place to expect gains.
+**Do not interpret post-hoc DEV strata as a deployable selection rule, and do not tune a method on the old TEST.** The new GPU DEV replay has been staged, not run by this documentation update.
 
 ## Cross-reference
 
-- `docs/paper1_static_4b_results.md`, `docs/paper1_static_test_results.md`: the DEV and Test numbers.
-- `harness/multiselect_metrics.py`: over/under-selection and gold-count metrics.
+- [Frozen 24-checkpoint TEST](paper1_static_test_results.md)
+- [24-run matched DEV](paper1_static_4b_results.md)
+- [Original count/SetJev controls](seed_results_2026-10-23.md)
