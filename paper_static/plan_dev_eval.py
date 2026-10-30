@@ -63,7 +63,7 @@ def convert(template,arm,seed):
 def main(argv=None):
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--template-root",type=Path,default=Path("qz_static_eval"))
-    ap.add_argument("--output-dir",type=Path,default=Path("qz_static_count_dev"))
+    ap.add_argument("--output-dir",type=Path,default=Path("qz_static_count_dev_regenerated"))
     ap.add_argument("--seeds",nargs="+",type=int,default=[43,44,45])
     args=ap.parse_args(argv)
     if len(set(args.seeds))!=len(args.seeds):
