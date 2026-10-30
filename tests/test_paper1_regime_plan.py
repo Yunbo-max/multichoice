@@ -19,7 +19,7 @@ class PilotPlanTests(unittest.TestCase):
             plan=planner.plan(d,Path("/models/Qwen4B"),
                 Path("innerjev/configs/4B/modules.json"),
                 Path("/runs/case"),Path("/runs/case/warm_bce_shared/final"),
-                seeds=(43,44,45))
+                seeds=(43,44,45),stage1_steps=1,stage2_steps=1)
             self.assertEqual(plan["status"],"PLAN_ONLY_NO_GPU_JOB")
             self.assertEqual(len(plan["rows"]),13)
             jobs=[r for r in plan["rows"] if r["phase"]=="paired-continuation"]
