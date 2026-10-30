@@ -108,16 +108,17 @@ Use code:
     python -m paper_static.controlled_regimes --output-dir runs/regimes_v1 \
       --seed 20261030 --k 8 --ntrain 240 --ndev 60 --ntest 60 --repeats 4
     python -m paper_static.block_pair_dp
+    python -m paper_static.regime_oracle_check
     python -m unittest discover -s tests -p 'test_paper1_controlled_regimes.py' -v
 
 Generator supplies three regimes with all counts 0..K LEGAL (avoids unfair
 empty-set truncation in reduction tests):
 - **I:** independent Bernoulli; visible per-candidate utility cues; J=0,a=0.
 - **C:** same additive score family, dynamic count residual determined by
-  visible workload and collective-pressure cues; strength in {0.5,1,1.8}.
-  Count support is not leaked from gold.
+  visible workload and collective-pressure cues; strength in {0,0.5,1,1.8} (zero is an essential negative control).
+  Count support is not leaked from gold. Every workload strength, including zero, is an observable *public cue*, not an oracle label.
 - **R:** candidate groups sharing a visible compatibility code, with
-  changing perfect matching across contexts, J in {1.5,3,4.5},
+  changing perfect matching across contexts, J in {0,1.5,3,4.5},
   same cardinality potential. All s_i=0, hence q/rho invariant under
   matching rewiring at fixed strength; only pair co-occurrences change.
 
@@ -158,6 +159,12 @@ a clean initialization study must start ALL arms from the same base.
    versus learned content-dependent pairing; zero-J and random-edge controls.
 6. Rule-parser / graph-constraint solver and BCE + structured reranker,
    for relational tasks with publicly observable compatibility constraints.
+
+**Implementation boundary:** controlled data generation, a mathematically exact
+small-K oracle and matching-block logZ/MAP are implemented. The learned
+content-dependent matching head, full Qwen Pairwise training path, gradient
+routing through edge selection and end-to-end 255-option VLM/LLM inference
+are NOT implemented; completing them is E2/E4 engineering, not a result.
 
 For fair inference comparisons, define **one common legal-set protocol**,
 include a BCE MAP under it, and separately show threshold policy metrics.
