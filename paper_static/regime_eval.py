@@ -133,12 +133,21 @@ def evaluate(students,oracles,predictions,mode,split):
         count_entropy=-sum(p*math.log(p) for p in rho if p>0)
         sampled_nll=sum(exact_subset_nll(scores,r["target"],pairs,weights,residual)
                         for r in rows)/len(rows)
+        pair_metrics={}
+        if mode=="pair" and truth["regime"]=="R":
+            true_edges={tuple(sorted(e)) for e in truth["teacher_pairs"]}
+            predicted_edges={tuple(sorted(e)) for e in pairs}
+            tp=len(true_edges & predicted_edges)
+            prec=tp/len(predicted_edges) if predicted_edges else 0.0
+            rec=tp/len(true_edges) if true_edges else 0.0
+            pair_metrics={"edge_precision":prec,"edge_recall":rec,
+                          "edge_f1":(2*prec*rec/(prec+rec)) if prec+rec else 0.0}
         records.append({"context":cid,"regime":truth["regime"],
                         "k":k,"strength":truth["strength"],"draws":len(rows),
                         "edge_source":edge_source,"joint_ce":joint_ce,
                         "joint_kl":max(-1e-9,joint_ce-entropy),
                         "count_ce":count_ce,"count_kl":max(-1e-9,count_ce-count_entropy),
-                        "sampled_set_nll":sampled_nll})
+                        "sampled_set_nll":sampled_nll,**pair_metrics})
     groups={}
     for regime in ("I","C","R"):
         items=[r for r in records if r["regime"]==regime]
@@ -149,6 +158,10 @@ def evaluate(students,oracles,predictions,mode,split):
                 "mean_count_ce":sum(r["count_ce"] for r in items)/len(items),
                 "mean_count_kl":sum(r["count_kl"] for r in items)/len(items),
                 "mean_sampled_set_nll":sum(r["sampled_set_nll"] for r in items)/len(items)}
+            if mode=="pair" and regime=="R":
+                groups[regime]["mean_edge_f1"]=sum(r["edge_f1"] for r in items)/len(items)
+                groups[regime]["mean_edge_precision"]=sum(r["edge_precision"] for r in items)/len(items)
+                groups[regime]["mean_edge_recall"]=sum(r["edge_recall"] for r in items)/len(items)
     return {"status":"EVALUATED_NO_TRAINING_BY_THIS_SCRIPT",
             "split":split,"model_mode":mode,"n_contexts":len(records),
             "edge_source_counts":{v:sum(r["edge_source"]==v for r in records)
