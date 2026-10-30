@@ -111,8 +111,8 @@ def generate(out, *, seed=20261030, ntrain=240, ndev=60, ntest=60, repeats=4, k=
                     # Count-only dependence is identifiable without oracle counts in prompts.
                     load=rng.choice(["low","medium","high"])
                     center={"low":1.8,"medium":k*.48,"high":k*.75}[load]
-                    strength_label=rng.choice(["mild","medium","strong"])
-                    strength={"mild":.5,"medium":1.0,"strong":1.8}[strength_label]
+                    strength_label=rng.choice(["zero","mild","medium","strong"])
+                    strength={"zero":0.0,"mild":.5,"medium":1.0,"strong":1.8}[strength_label]
                     residual=[-strength*(m-center)**2 for m in range(k+1)]
                     rule=(f"Shared workload regime {load}; collective pressure {strength_label}. "
                           "Option utility features are assessed jointly.")
@@ -122,8 +122,8 @@ def generate(out, *, seed=20261030, ntrain=240, ndev=60, ntest=60, repeats=4, k=
                     utilities=[0]*k
                     pairings=list(rng.choice(pools[split]))
                     used_graphs[split].add(tuple(pairings))
-                    strength_label=rng.choice(["mild","medium","strong"])
-                    strength={"mild":1.5,"medium":3.0,"strong":4.5}[strength_label]
+                    strength_label=rng.choice(["zero","mild","medium","strong"])
+                    strength={"zero":0.0,"mild":1.5,"medium":3.0,"strong":4.5}[strength_label]
                     weights=[strength]*len(pairings)
                     residual=[-.9*(m-2.0)**2 for m in range(k+1)]
                     for pair_number,(i,j) in enumerate(pairings):
