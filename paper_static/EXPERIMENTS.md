@@ -1,5 +1,12 @@
 # Paper 1 — Count-Anchored SetJev: locked experimental protocol (2026-10-27)
 
+## October 30 update: matched TEST complete; DEV audit and pairwise reference added
+
+The original 8 arms x 3 seeds are complete. Frozen TEST (2,140 questions) was run once; anchor Set CE has exact-set EM 0.6173 vs BCE continuation 0.6182 and independent count-head Set CE 0.4005. These are warm-started comparisons with the same S44 BCE checkpoint, not a 5k-sample from-scratch improvement. Never tune a loss, threshold, gating strategy or method on the already opened TEST.
+
+New DEV-only measurement protocol: [count NLL quartiles, zero-residual and paired bootstrapping](../docs/paper1_count_pairwise_protocol.md). Execute the six frozen DEV inference jobs before reporting actual stratified numbers. New pairwise reference gives an exact K<=12 synthetic control only; it is not a trained general-purpose Relational Set Decision Model. The previous option-independence interpretation has been [corrected](../docs/paper1_option_independence.md). Aggregate Poisson-binomial count agreement and a zero *bias* do not prove option independence or zero input-dependent residual weights.
+
+
 ## Claim and scope
 Main hypothesis: coupling the native candidate scores to a residual cardinality prior stabilizes continuation fine-tuning and improves set-valued decision calibration. It is NOT a new cardinality-potential family: independent count logits c_m and residual a_m are expressively reparameterizable via a_m=c_m-log Z_m(s). The empirical claim must concern optimization, gradients, and calibrated set decisions, not representational universality.
 
