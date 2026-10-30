@@ -141,6 +141,62 @@ and pair coupling in {0,1.5,3,4.5}. Use K=6/8/10 initially.
 A hard exactly-two diagnostic may be used ONLY if the same public support
 is passed to all models.
 
+## Executable preparation and CPU/4B limits
+
+Generate the fixed controlled regimes and audit the joint-law ceilings
+**before any GPU job**:
+
+~~~bash
+python -m paper_static.controlled_regimes --output-dir runs/regimes_v1 \
+  --seed 20261030 --k 8 --ntrain 240 --ndev 60 --ntest 60 --repeats 4
+python -m paper_static.regime_oracle_check
+python -m paper_static.block_pair_dp
+python -m unittest discover -s tests -p 'test_paper1_*' -v
+~~~
+
+For a meaningful 4B LoRA fit rather than the small CPU smoke, generate a
+separate, predeclared dataset directory with
+`--ntrain 2400 --ndev 500 --ntest 500 --repeats 4`. The
+**same** train/dev files and CPU/GPU budgets must be used for every arm.
+
+Create 13 *plan-only* command arrays (one BCE warm prerequisite + 4 methods
+times 3 seeds), no QZ submission and no fabricated checkpoints:
+
+~~~bash
+python -m paper_static.plan_regime_pilots \
+  --data-dir runs/regimes_v1 \
+  --model /path/to/Qwen3.5-4B \
+  --output runs/paper1_plan/controlled_4b.json \
+  --seeds 43 44 45 --warm-steps 450 --continuation-steps 100
+~~~
+
+Review available GPU memory and tune LoRA LR using the **same DEV budget**
+for every arm. A single suggested LR in a plan is not evidence of a
+fair hyperparameter search. Run BCE warm start, inspect/verify its saved
+full checkpoint, and only then submit matched continuations. Qwen Pairwise
+**cannot** be added to the plan until a trained edge detector and
+pairwise loss have been integrated and audited.
+
+Once a compatible model has emitted predictions for every repeated draw,
+evaluate true expected joint KL from the separately sealed synthetic
+teacher moments, with option scores and *raw* count/pair residuals:
+
+~~~bash
+python -m paper_static.regime_eval \
+  --data-root runs/regimes_v1 \
+  --predictions runs/<arm>/dev_predictions.jsonl \
+  --mode bce --split dev \
+  --output runs/<arm>/regime_dev_metrics.json
+# Mode can be bce, anchor, or pair. Pair mode requires documented
+# edge_source=learned/public_rule_parser/oracle_diagnostic, NEVER unlabeled.
+~~~
+
+Use the oracle benchmark solely as a diagnostic label provider, not an
+input to the student or a way to select answer sets at inference. The
+`regime_eval` scorer will flag oracle-diagnostic pair identities rather
+than letting them appear as a learned-model result. Evaluate synthetically
+generated TEST only after method/threshold selection is locked.
+
 ### E2 — Same-model causal training matrix (Qwen3.5 4B)
 
 One base checkpoint, option readout, prompt format, candidate permutations,
