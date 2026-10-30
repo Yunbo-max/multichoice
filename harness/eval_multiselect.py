@@ -326,7 +326,7 @@ def infer(args, rows):
                     }
                     item = structured(
                         scores.cpu().tolist(),
-                        count_logits[position].float().cpu().tolist(),
+                        count_logits[position, : k + 1].float().cpu().tolist(),
                         protocol,
                         count_anchor=count_anchor,
                     )
