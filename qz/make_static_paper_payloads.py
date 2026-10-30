@@ -24,8 +24,8 @@ OUT_DIR = ROOT / "qz_static_paper"
 MANIFEST = ROOT / "paper_static" / "runs_4b.jsonl"
 
 R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev"
-V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
-M = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B"
+V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/.venv-sii"
+M = "/inspire/hdd/global_public/public_models/Qwen/Qwen3.5-4B"
 
 WORKSPACE = "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6"
 PROJECT = "project-160ccb20-98ab-4538-a847-01d1f83d5b0f"

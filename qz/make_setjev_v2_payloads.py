@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "qz_setjev_v2"
 
 R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev"
-V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
-M = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/models/Qwen3.5-4B"
+V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/.venv-sii"
+M = "/inspire/hdd/global_public/public_models/Qwen/Qwen3.5-4B"
 D5K = f"{R}/data/multiselect_grouped_multi_5k"
 D_FULL = f"{R}/data/multiselect_grouped_multi"
 CKPT = f"{R}/runs/qz/grouped_bce_4gpu_s44/v1/final"

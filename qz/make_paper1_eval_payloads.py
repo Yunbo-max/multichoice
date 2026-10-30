@@ -20,7 +20,7 @@ OUT_DIR = ROOT / "qz_static_eval"
 MANIFEST = ROOT / "paper_static" / "runs_4b.jsonl"
 
 R = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev"
-V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/research/DiffRwkv/decision_compare/.venv-sii"
+V = "/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/.venv-sii"
 TEST = f"{R}/data/multiselect_grouped_multi/test.jsonl"
 
 WORKSPACE = "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6"
