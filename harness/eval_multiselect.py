@@ -338,6 +338,9 @@ def infer(args, rows):
                             "structured decoder did not return a set MAP prediction"
                         )
                     item["candidate_logits"] = scores.cpu().tolist()
+                    # Raw head output a_m(x) for anchored checkpoints (c_m for independent).
+                    # Needed to test whether the learned residual, not merely its bias, matters.
+                    item["count_residual_logits"] = count_logits[position, : k + 1].float().cpu().tolist()
                 else:
                     item = {
                         "p": torch.sigmoid(scores).cpu().tolist(),
