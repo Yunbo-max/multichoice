@@ -176,10 +176,9 @@ def torch_block_log_partition(scores,pairs=(),weights=None,residual=None,allowed
             states.append(torch.cat((
                 old.new_full((shift,),-math.inf),old+v,
                 old.new_full((degree-shift,),-math.inf))))
-        next_old=states[0]
-        for entry in states[1:]:
-            next_old=torch.logaddexp(next_old,entry)
-        old=next_old
+        # A direct logsumexp over ALL transitions avoids transient
+        # logaddexp(-inf,-inf), whose backward gradient can become NaN.
+        old=torch.logsumexp(torch.stack(states,dim=0),dim=0)
     index=torch.tensor(support,dtype=torch.long,device=scores.device)
     return torch.logsumexp(old[index]+residual[index],dim=0)
 
@@ -194,7 +193,6 @@ def main():
     z=exact_block_readout(s,pairs,w,residual)
     q=exact_distribution(s,residual,[[0,w[0],0,0],[w[0],0,0,0],
                                        [0,0,0,w[1]],[0,0,w[1],0]])
-    expected=-math.log(sum(math.exp(0) for _ in [])) if False else 0.0
     # Use elementary joint probability to certify the normalized DP.
     gold_set=[1,1,0,0]
     nll=exact_subset_nll(s,gold_set,pairs,w,residual)
