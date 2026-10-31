@@ -25,6 +25,14 @@ sys.path.insert(0, str(ROOT / "harness"))
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
+def _label(i):
+    # A..Z, then AA, AB, ... (unique up to 255+)
+    if i < len(ALPHABET):
+        return ALPHABET[i]
+    i -= len(ALPHABET)
+    return ALPHABET[i // len(ALPHABET)] + ALPHABET[i % len(ALPHABET)]
+
+
 def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -103,7 +111,7 @@ def generate(out, *, seed=20261030, ntrain=200, ndev=50, ntest=50, repeats=4, k=
             q = _marginals(scores, rho, logz)
             rule = (f"Shared workload regime {load}; collective pressure "
                     f"{['zero','mild','medium','strong'][['zero','mild','medium','strong'].index('zero')]}.")
-            options = [{"key": ALPHABET[i % 26],
+            options = [{"key": _label(i),
                         "desc": f"Candidate {i:02d}, utility feature {utilities[i]}, compatibility code none"}
                        for i in range(k)]
             public = {"state": f"Selection task. {rule} Workload={load}.",
@@ -124,7 +132,7 @@ def generate(out, *, seed=20261030, ntrain=200, ndev=50, ntest=50, repeats=4, k=
                     **public, "id": f"{cid}/draw-{repeat:02d}",
                     "group_id": cid, "source": "controlled_C", "lang": "en", "split": split,
                     "target": [int(i in sel) for i in range(k)],
-                    "gold_letters": "".join(ALPHABET[i % 26] for i in range(k) if i in sel)})
+                    "gold_letters": "".join(_label(i) for i in range(k) if i in sel)})
     out.mkdir(parents=True)
     data_dir = out / "student"
     oracle_dir = out / "oracle_DO_NOT_USE_AS_MODEL_INPUT"
