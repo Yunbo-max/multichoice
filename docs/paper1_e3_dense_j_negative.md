@@ -52,15 +52,34 @@ straight-through failure: the greedy matching is frozen by the zero
 initialization, so only the initially-chosen pairs ever receive gradient and the
 model cannot explore alternative matchings.
 
+## E3c — Gumbel-perturbed straight-through matching also fails
+
+Adding Gumbel noise to the greedy selection (so non-selected edges can be
+explored, with gradients flowing through the un-perturbed weights) leaves edge
+F1 at 0.14 — still chance. This rules out the "frozen initial matching" story as
+the sole cause: even with exploration, the joint set CE gradient does not
+recover the pairing.
+
+| variant | edge F1 (chance ~0.143) |
+|---|---:|
+| dense J, full I/C/R, lr 2e-5 | 0.147 |
+| dense J, R-only, lr 2e-5 | 0.126 |
+| dense J, R-only, pair lr x50 | 0.093 |
+| pair blocks, R-only, pair lr x50 | 0.114 |
+| pair blocks + Gumbel noise, R-only | 0.140 |
+
 ## Root cause
 
-Learning a discrete matching from a joint set objective needs a differentiable
-relaxation of the matching assignment (Gumbel-Softmax / Sinkhorn, or an explicit
-matching parameterization with entropy regularization). Neither the dense J nor
-the greedy straight-through block matching supplies gradients to non-selected
-edges, so both are controlled negatives. This is the E3b/E4 frontier; the exact
+Learning a discrete matching from a joint set objective does not work here under
+any of the three selectors tried (dense J, greedy straight-through, Gumbel-
+perturbed straight-through). The remaining explanation is that the joint set CE
+gradient signal for the pairing is too weak at this data scale (the pairing only
+shifts the joint law by ~0.84 nats of KL while the cardinality term dominates),
+so the pair head cannot commit to the correct matching. A stronger inductive
+bias — supervised matching, an explicit matching parameterization with entropy
+regularization, or a pairwise-supervised loss — is the E3/E4 frontier. The exact
 O(K^2) block DP (`paper_static/block_pair_dp.py`) is the intended inference once
-a differentiable matching selector exists.
+such a selector exists.
 
 ## Interpretation
 
