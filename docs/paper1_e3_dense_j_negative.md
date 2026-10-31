@@ -33,6 +33,35 @@ and slightly lowers joint NLL (4.884 -> 4.855), but the inferred matching does
 not improve — the dense J learns a smooth coupling, not the sparse disjoint
 matching.
 
+## E3b — disjoint pair blocks (greedy + straight-through) also fails
+
+Following the negative dense-J result, the loss was changed to a greedy
+top-|w| disjoint matching whose selected weights flow through an autograd-safe
+O(K^2) block log partition (`torch_pair_block_log_partition`).
+
+| setting | edge F1 (chance ~0.143) |
+|---|---:|
+| dense J, full I/C/R, lr 2e-5 | 0.147 |
+| dense J, R-only, lr 2e-5 | 0.126 |
+| dense J, R-only, pair lr x50 | 0.093 |
+| **pair blocks, R-only, pair lr x50** | **0.114** |
+
+Edge F1 remains at chance. The pair-head weights stay near zero except for the
+few selected pairs (|W|max ~3e-2, |W|mean ~1e-4), which is the signature of a
+straight-through failure: the greedy matching is frozen by the zero
+initialization, so only the initially-chosen pairs ever receive gradient and the
+model cannot explore alternative matchings.
+
+## Root cause
+
+Learning a discrete matching from a joint set objective needs a differentiable
+relaxation of the matching assignment (Gumbel-Softmax / Sinkhorn, or an explicit
+matching parameterization with entropy regularization). Neither the dense J nor
+the greedy straight-through block matching supplies gradients to non-selected
+edges, so both are controlled negatives. This is the E3b/E4 frontier; the exact
+O(K^2) block DP (`paper_static/block_pair_dp.py`) is the intended inference once
+a differentiable matching selector exists.
+
 ## Interpretation
 
 1. **A dense J head is the wrong inductive bias for disjoint pairings.** The true
