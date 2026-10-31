@@ -79,6 +79,7 @@ from set_distillation import (
     allowed_counts,
     attach_set_targets,
     input_digest,
+    pair_loss_terms,
     read_set_target_file,
     set_loss_terms,
     structured_prediction,
@@ -727,9 +728,9 @@ def tune_threshold(rows, predictions, low=0.05, high=0.95, step=0.01):
 class Readout(torch.nn.Module):
     """Answer slot -> 255 legal-label logits (frozen output head)."""
 
-    def __init__(self, base, label_ids, full_rank, objective="bce"):
+    def __init__(self, base, label_ids, full_rank, objective="bce", pair_pairs=0):
         super().__init__()
-        if objective not in ("bce", "set"):
+        if objective not in ("bce", "set", "pair"):
             raise ValueError(f"unknown readout objective {objective!r}")
         self.base = base
         self.full_rank = full_rank
@@ -743,7 +744,9 @@ class Readout(torch.nn.Module):
                 "legal_weight", weight.detach().clone(), persistent=False
             )
         head = (base if full_rank else base.get_base_model()).get_output_embeddings()
-        if objective == "set":
+        self.count_head = None
+        self.pair_head = None
+        if objective in ("set", "pair"):
             self.count_head = torch.nn.Linear(
                 head.weight.shape[1],
                 len(label_ids) + 1,
@@ -753,8 +756,17 @@ class Readout(torch.nn.Module):
             # A uniform allowed-count prior, independent of candidate logit shifts.
             torch.nn.init.zeros_(self.count_head.weight)
             torch.nn.init.zeros_(self.count_head.bias)
-        else:
-            self.count_head = None
+        if objective == "pair":
+            if pair_pairs < 1:
+                raise ValueError("pair objective requires --pair-pairs > 0")
+            self.pair_head = torch.nn.Linear(
+                head.weight.shape[1],
+                pair_pairs,
+                device=head.weight.device,
+                dtype=head.weight.dtype,
+            )
+            torch.nn.init.zeros_(self.pair_head.weight)
+            torch.nn.init.zeros_(self.pair_head.bias)
 
     def forward(self, input_ids, attention_mask):
         base = self.base if self.full_rank else self.base.get_base_model()
@@ -778,7 +790,10 @@ class Readout(torch.nn.Module):
         if self.count_head is None:
             return logits
         counts = self.count_head(slot.to(dtype=self.count_head.weight.dtype)).float()
-        return logits, counts
+        if self.pair_head is None:
+            return logits, counts
+        pair_logits = self.pair_head(slot.to(dtype=self.pair_head.weight.dtype)).float()
+        return logits, counts, pair_logits
 
 
 def load_count_head(wrapper, directory, required=True):
@@ -794,7 +809,7 @@ def load_count_head(wrapper, directory, required=True):
     meta = json.loads(meta_path.read_text())
     if (
         meta.get("schema") != READOUT_SCHEMA
-        or meta.get("objective") != "set"
+        or meta.get("objective") not in ("set", "pair")
         or meta.get("max_candidates") != len(wrapper.label_ids)
         or meta.get("hidden_size") != wrapper.count_head.in_features
         or meta.get("label_ids") != wrapper.label_ids.cpu().tolist()
@@ -806,6 +821,14 @@ def load_count_head(wrapper, directory, required=True):
     if any(not torch.isfinite(value).all() for value in state.values()):
         raise ValueError("nonfinite count-head checkpoint")
     wrapper.count_head.load_state_dict(state, strict=True)
+    if meta.get("objective") == "pair":
+        pair_path = directory / "decision_pair_head.pt"
+        if wrapper.pair_head is None or not pair_path.exists():
+            raise ValueError(f"pair checkpoint missing decision_pair_head.pt in {directory}")
+        pair_state = torch.load(pair_path, map_location="cpu", weights_only=True)
+        if any(not torch.isfinite(value).all() for value in pair_state.values()):
+            raise ValueError("nonfinite pair-head checkpoint")
+        wrapper.pair_head.load_state_dict(pair_state, strict=True)
     return True
 
 
@@ -820,15 +843,23 @@ def save_count_head(wrapper, directory, state=None, loss_config=None):
         {name: value.detach().cpu().float() for name, value in state.items()},
         directory / "decision_count_head.pt",
     )
+    if wrapper.pair_head is not None:
+        torch.save(
+            {name: value.detach().cpu().float()
+             for name, value in wrapper.pair_head.state_dict().items()},
+            directory / "decision_pair_head.pt",
+        )
     save_json(
         directory / "decision_readout.json",
         {
             "schema": READOUT_SCHEMA,
-            "objective": "set",
+            "objective": wrapper.objective,
             "decoder": "set_map",
             "max_candidates": len(wrapper.label_ids),
             "hidden_size": wrapper.count_head.in_features,
             "label_ids": wrapper.label_ids.cpu().tolist(),
+            "pair_pairs": (wrapper.pair_head.out_features
+                           if wrapper.pair_head is not None else None),
             "training_loss": loss_config,
         },
     )
@@ -1331,7 +1362,11 @@ def main():
     )
     parser.add_argument("--target-file", type=Path)
     parser.add_argument("--target-missing", choices=["error", "gold"], default="error")
-    parser.add_argument("--objective", choices=["bce", "set"], default="bce")
+    parser.add_argument("--objective", choices=["bce", "set", "pair"], default="bce")
+    parser.add_argument("--pair-pairs", type=int, default=0,
+                        help="pair objective: number of upper-triangle J logits (K*(K-1)//2)")
+    parser.add_argument("--pair-lr-mult", type=float, default=1.0,
+                        help="pair objective: multiplier on the pair-head learning rate")
     parser.add_argument(
         "--set-loss",
         choices=["set_ce", "independent_marginal", "induced_marginal"],
@@ -1361,6 +1396,10 @@ def main():
         action="store_true",
         help="set: residual count head (count_logits + log Z_m(scores)); zero-init "
         "correction cold-starts from the candidate-score-implied count distribution",
+    )
+    parser.add_argument(
+        "--count-anchor-detach", action="store_true",
+        help="identical forward anchored count probabilities; detach score gradients through log Z_m",
     )
     parser.add_argument(
         "--allow-legacy-targets",
@@ -1418,12 +1457,14 @@ def main():
         parser.error("--lambda-g must be >= 0")
     if not math.isfinite(args.gold_weight) or not 0 <= args.gold_weight <= 1:
         parser.error("--gold-weight must be in [0,1]")
-    if args.objective == "set" and (args.lambda_g != 0 or args.graph != "none"):
+    if args.objective in ("set", "pair") and (args.lambda_g != 0 or args.graph != "none"):
         parser.error(
-            "set objective does not mix in the legacy label-token graph penalty"
+            "set/pair objective does not mix in the legacy label-token graph penalty"
         )
-    if args.objective != "set" and args.count_anchor:
-        parser.error("--count-anchor requires --objective set")
+    if args.objective not in ("set", "pair") and args.count_anchor:
+        parser.error("--count-anchor requires --objective set or pair")
+    if args.count_anchor_detach and not args.count_anchor:
+        parser.error("--count-anchor-detach requires --count-anchor")
     if args.objective == "bce" and args.count_target != "teacher":
         parser.error(
             "--count-target gold is a set-head ablation and requires --objective set"
@@ -1444,6 +1485,8 @@ def main():
         )
     if args.init_checkpoint_id is not None and not args.init_checkpoint_id.strip():
         parser.error("--init-checkpoint-id must be nonempty")
+    if args.objective == "pair" and args.pair_pairs < 1:
+        parser.error("--pair-pairs must be positive for the pair objective")
     if args.global_batch < 1 or args.epochs < 1:
         parser.error("--global-batch and --epochs must be positive")
     if args.world_size < 1:
@@ -1564,7 +1607,7 @@ def main():
         raise ValueError(
             "set checkpoint requires --objective set; refusing to discard its count head"
         )
-    if args.resume and args.objective == "set":
+    if args.resume and args.objective in ("set", "pair"):
         meta_path = load_path / "decision_readout.json"
         if not meta_path.is_file():
             raise ValueError(f"resume set checkpoint lacks metadata: {meta_path}")
@@ -1576,6 +1619,8 @@ def main():
                 "resume checkpoint count-anchor mode disagrees with --count-anchor; "
                 "use matching mode or start a new (non-resume) experiment"
             )
+        if bool(previous_loss.get("count_anchor_detach", False)) != args.count_anchor_detach:
+            raise ValueError("resume checkpoint count-anchor-detach mismatch")
 
     output = Path(args.output)
     if rank == 0:
@@ -1616,6 +1661,7 @@ def main():
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
                 "count_anchor": args.count_anchor,
+                        "count_anchor_detach": args.count_anchor_detach,
                 "gold_weight": args.gold_weight,
                 "allow_legacy_targets": args.allow_legacy_targets,
                 "lambda_g": args.lambda_g,
@@ -1715,12 +1761,16 @@ def main():
         graph_cache = build_graph_cache(args.graph, train_ks, kernel, device)
         log(f"[graph] kind={args.graph} lambda_g={args.lambda_g} Ks={train_ks}")
 
-    wrapper = Readout(base, label_ids, full, objective=args.objective)
-    if args.objective == "set":
+    wrapper = Readout(base, label_ids, full, objective=args.objective, pair_pairs=args.pair_pairs)
+    if args.objective in ("set", "pair"):
         load_count_head(wrapper, load_path, required=bool(args.resume))
         count_trainable = sum(p.numel() for p in wrapper.count_head.parameters())
         log(f"[model] additional_count_head_parameters={count_trainable}")
         trainable += count_trainable
+    if args.objective == "pair":
+        pair_trainable = sum(p.numel() for p in wrapper.pair_head.parameters())
+        log(f"[model] additional_pair_head_parameters={pair_trainable}")
+        trainable += pair_trainable
     params = None
     if full:
         from torch.distributed.fsdp import (
@@ -1749,14 +1799,26 @@ def main():
 
         model = DDP(wrapper.to(device), device_ids=[local], broadcast_buffers=False)
     params = [parameter for parameter in model.parameters() if parameter.requires_grad]
-    optimizer = torch.optim.AdamW(
-        params,
-        lr=args.lr,
-        betas=(0.9, 0.999),
-        eps=1e-8,
-        weight_decay=0.0,
-        foreach=False,
-    )
+    if args.objective == "pair" and args.pair_lr_mult != 1.0:
+        pair_params = [p for n, p in model.named_parameters()
+                       if p.requires_grad and "pair_head" in n]
+        other_params = [p for n, p in model.named_parameters()
+                        if p.requires_grad and "pair_head" not in n]
+        optimizer = torch.optim.AdamW(
+            [{"params": other_params, "lr": args.lr, "base_lr": args.lr},
+             {"params": pair_params, "lr": args.lr * args.pair_lr_mult,
+              "base_lr": args.lr * args.pair_lr_mult}],
+            betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0, foreach=False,
+        )
+    else:
+        optimizer = torch.optim.AdamW(
+            params,
+            lr=args.lr,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=0.0,
+            foreach=False,
+        )
 
     writer = None
     if rank == 0:
@@ -1808,7 +1870,12 @@ def main():
             padded = indices + [indices[-1]] * (world * micro - count)
             own = padded[rank * micro : (rank + 1) * micro]
             result = model(**encode_texts(own, dev_prompts))
-            logits, count_logits = result if args.objective == "set" else (result, None)
+            if args.objective == "pair":
+                logits, count_logits, pair_logits = result
+            elif args.objective == "set":
+                logits, count_logits = result
+            else:
+                logits, count_logits = result, None
             for position, index in enumerate(own):
                 if rank * micro + position >= count:
                     continue
@@ -1818,7 +1885,7 @@ def main():
                 target = torch.as_tensor(
                     row["target"], dtype=torch.float32, device=scores.device
                 )
-                if args.objective == "set":
+                if args.objective in ("set", "pair"):
                     item = structured_prediction(
                         scores.cpu().tolist(),
                         count_logits[position, : k + 1].cpu().tolist(),
@@ -1826,6 +1893,9 @@ def main():
                         count_anchor=args.count_anchor,
                     )
                     item["candidate_logits"] = scores.cpu().tolist()
+                    if args.objective == "pair":
+                        item["count_residual_logits"] = count_logits[position, : k + 1].cpu().tolist()
+                        item["pair_logits"] = pair_logits[position, : k * (k - 1) // 2].cpu().tolist()
                     # Shared metrics compute marginal BCE identically to standalone eval.
                 else:
                     item = {
@@ -1852,7 +1922,7 @@ def main():
             )
         record["selection"] = {
             "metric": "question_em:set_map"
-            if args.objective == "set"
+            if args.objective in ("set", "pair")
             else "question_em@0.5",
             "tie_break": "lower_bce",
             "question_em": record["question_em"],
@@ -1882,9 +1952,12 @@ def main():
             if rank == 0:
                 exported = {}
                 count_state = {}
+                pair_state = {}
                 for name, value in state.items():
                     if name.startswith("count_head."):
                         count_state[name.removeprefix("count_head.")] = value
+                    elif name.startswith("pair_head."):
+                        pair_state[name.removeprefix("pair_head.")] = value
                     elif name.startswith("base."):
                         exported[name.removeprefix("base.")] = (
                             value.to(torch.bfloat16)
@@ -1901,7 +1974,7 @@ def main():
                     safe_serialization=True,
                     max_shard_size="5GB",
                 )
-                if args.objective == "set":
+                if args.objective in ("set", "pair"):
                     save_count_head(
                         wrapper,
                         destination,
@@ -1911,8 +1984,15 @@ def main():
                             "count_weight": args.count_weight,
                             "count_target": args.count_target,
                             "count_anchor": args.count_anchor,
+                            "count_anchor_detach": args.count_anchor_detach,
                         },
                     )
+                    if args.objective == "pair" and pair_state:
+                        torch.save(
+                            {name: value.detach().cpu().float()
+                             for name, value in pair_state.items()},
+                            destination / "decision_pair_head.pt",
+                        )
                 tokenizer.save_pretrained(destination)
                 save_json(
                     output / f"export_check-{step:06d}.json", verify_export(destination)
@@ -1930,6 +2010,7 @@ def main():
                         "count_weight": args.count_weight,
                         "count_target": args.count_target,
                         "count_anchor": args.count_anchor,
+                        "count_anchor_detach": args.count_anchor_detach,
                     },
                 )
         torch.distributed.barrier()
@@ -1944,7 +2025,7 @@ def main():
         begin = time.monotonic()
         count = len(indices)
         for group in optimizer.param_groups:
-            group["lr"] = args.lr * lr_factor(step, planned_steps)
+            group["lr"] = group.get("base_lr", args.lr) * lr_factor(step, planned_steps)
         optimizer.zero_grad(set_to_none=True)
         partitions, micro = split_batch(
             indices, train_lengths, world, args.max_batch_tokens, args.global_batch
@@ -1956,7 +2037,16 @@ def main():
                 train_rows[row_index]["train_target"] for row_index in batch_indices
             ]
             result = model(**encode_texts(batch_indices, train_prompts))
-            if args.objective == "set":
+            if args.objective == "pair":
+                losses, bces, graphs = pair_loss_terms(
+                    result[0],
+                    result[1],
+                    result[2],
+                    [train_rows[i] for i in batch_indices],
+                    count_anchor=args.count_anchor,
+                    count_anchor_detach=args.count_anchor_detach,
+                )
+            elif args.objective == "set":
                 losses, bces, graphs = set_loss_terms(
                     result[0],
                     result[1],
@@ -1965,6 +2055,7 @@ def main():
                     loss_family=args.set_loss,
                     count_weight=args.count_weight,
                     count_anchor=args.count_anchor,
+                    count_anchor_detach=args.count_anchor_detach,
                 )
             else:
                 losses, bces, graphs = loss_terms(
@@ -2004,8 +2095,8 @@ def main():
                 sums[2] / rows_seen
             ),
             "objective": args.objective,
-            "set_loss": args.set_loss if args.objective == "set" else None,
-            "count_weight": args.count_weight if args.objective == "set" else None,
+            "set_loss": args.set_loss if args.objective in ("set", "pair") else None,
+            "count_weight": args.count_weight if args.objective in ("set", "pair") else None,
             "grad": float(grad),
             "lr": optimizer.param_groups[0]["lr"],
             "seconds": seconds,
@@ -2049,9 +2140,9 @@ def main():
                     "f1": evaluation["f1"],
                     "precision": evaluation["precision"],
                     "recall": evaluation["recall"],
-                    "threshold": None if args.objective == "set" else 0.5,
+                    "threshold": None if args.objective in ("set", "pair") else 0.5,
                     "decoder": "set_map"
-                    if args.objective == "set"
+                    if args.objective in ("set", "pair")
                     else "protocol_or_threshold",
                     "selection": "dev question EM; tie-break lower marginal BCE",
                 }
@@ -2119,9 +2210,11 @@ def main():
             # intermediate LoRA checkpoints hold adapters; merge the selected one
             materialize_lora(args.model, selected, final)
             tokenizer.save_pretrained(final)
-            if args.objective == "set":
+            if args.objective in ("set", "pair"):
                 for name in ("decision_readout.json", "decision_count_head.pt"):
                     shutil.copy2(selected / name, final / name)
+                if args.objective == "pair":
+                    shutil.copy2(selected / "decision_pair_head.pt", final / "decision_pair_head.pt")
         save_json(output / "export_check.json", verify_export(final))
         save_json(output / "selection.json", best_record)
         save_json(
@@ -2141,6 +2234,7 @@ def main():
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
                 "count_anchor": args.count_anchor,
+                        "count_anchor_detach": args.count_anchor_detach,
                 "gold_weight": args.gold_weight,
             },
         )

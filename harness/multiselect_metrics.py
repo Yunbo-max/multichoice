@@ -244,6 +244,10 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
                      "checkpoint_id", "provenance"):
             if name in item:
                 record[name] = item[name]
+        if "count_residual_logits" in item:
+            record["count_residual_logits"] = _numbers(
+                item["count_residual_logits"], k + 1, ident, "count_residual_logits"
+            )
         if item.get("decoder") == "set_map" and "count_probs" not in item:
             raise ValueError(f"{ident}: a structured set_map prediction requires count_probs")
         if "count_probs" in item:
@@ -312,6 +316,7 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
 def _report(records):
     n = len(records)
     tp = fp = fn = tn = exact = count_correct = violations = 0
+    over_selected = under_selected = 0
     count_error = expected_count_error = bce_sum = membership_brier = 0.0
     set_nll = set_confidence_brier = 0.0
     set_rows = 0
@@ -329,6 +334,10 @@ def _report(records):
         exact += selected == gold
         count_correct += len(selected) == len(gold)
         count_error += abs(len(selected) - len(gold))
+        if len(selected) > len(gold):
+            over_selected += 1
+        elif len(selected) < len(gold):
+            under_selected += 1
         expected_count_error += abs(sum(record["p"]) - len(gold))
         violations += bool(record["protocol_violation"])
         bce_sum += record["bce"]
@@ -360,6 +369,8 @@ def _report(records):
         "f1": 2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else 0.0,
         "question_em_count": exact, "question_em": exact / n if n else 0.0,
         "count_accuracy_count": count_correct, "count_accuracy": count_correct / n if n else 0.0,
+        "over_selection_count": over_selected, "over_selection_rate": over_selected / n if n else 0.0,
+        "under_selection_count": under_selected, "under_selection_rate": under_selected / n if n else 0.0,
         "count_mae": count_error / n if n else 0.0,
         "marginal_expected_count_mae": expected_count_error / n if n else 0.0,
         "protocol_violation_count": violations, "protocol_violation_rate": violations / n if n else 0.0,
@@ -393,12 +404,15 @@ def compute_metrics(rows, predictions, threshold=0.5, decoder="protocol"):
     records = prediction_records(rows, predictions, threshold, decoder)
     if not records:
         raise ValueError("cannot score an empty dataset")
-    grouped = {name: defaultdict(list) for name in ("source", "lang", "k", "k_bucket", "selection_mode")}
+    grouped = {name: defaultdict(list) for name in ("source", "lang", "k", "k_bucket", "selection_mode", "gold_count")}
     for record in records:
         k = record["n_options"]
+        gold_count = sum(record["target"])
         values = {"source": record["source"], "lang": record["lang"], "k": k,
                   "k_bucket": "2-4" if k <= 4 else "5" if k == 5 else "6+",
-                  "selection_mode": record["selection_mode"]}
+                  "selection_mode": record["selection_mode"],
+                  "gold_count": "1" if gold_count == 1 else "2" if gold_count == 2
+                  else "3" if gold_count == 3 else "4+"}
         for name, value in values.items():
             grouped[name][str(value)].append(record)
     result = _report(records)
