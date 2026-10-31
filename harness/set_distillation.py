@@ -413,6 +413,50 @@ def torch_pairwise_log_partition(scores, residual, J, allowed):
     return maximum + torch.logsumexp(energy - maximum, dim=0)
 
 
+def torch_pair_block_log_partition(scores, pairs, weights, residual, allowed):
+    """Autograd-safe O(K^2) log Z over disjoint pairs (block size two).
+
+    Gradients flow through scores, pair weights and residual; the matching is
+    selected separately (discrete) and passed in as ``pairs``. Mirrors
+    paper_static/block_pair_dp.torch_block_log_partition without a cross-package
+    import.
+    """
+    import torch
+
+    k = scores.numel()
+    if weights is None:
+        weights = scores.new_zeros(len(pairs))
+    if isinstance(weights, (tuple, list)):
+        weights = torch.stack([torch.as_tensor(w, dtype=scores.dtype, device=scores.device)
+                               for w in weights]) if weights else scores.new_zeros(0)
+    residual = scores.new_zeros(k + 1) if residual is None else residual
+    support = sorted(set(allowed))
+    pair_lookup = {i: (j, weights[n]) for n, (i, j) in enumerate(pairs)}
+    pair_lookup.update({j: (i, weights[n]) for n, (i, j) in enumerate(pairs)})
+    seen = set()
+    old = scores.new_zeros(1)
+    for i in range(k):
+        if i in seen:
+            continue
+        if i in pair_lookup:
+            j, w = pair_lookup[i]
+            seen.update((i, j))
+            local = (scores.new_zeros(()), torch.logaddexp(scores[i], scores[j]),
+                     scores[i] + scores[j] + w)
+        else:
+            seen.add(i)
+            local = (scores.new_zeros(()), scores[i])
+        degree = len(local) - 1
+        states = []
+        for shift, v in enumerate(local):
+            states.append(torch.cat((
+                old.new_full((shift,), -float("inf")), old + v,
+                old.new_full((degree - shift,), -float("inf")))))
+        old = torch.logsumexp(torch.stack(states, dim=0), dim=0)
+    index = torch.tensor(support, dtype=torch.long, device=scores.device)
+    return torch.logsumexp(old[index] + residual[index], dim=0)
+
+
 def count_anchor_logits(scores, count_logits):
     """Residual count logits: correction[m] + log Z_m(raw candidate scores).
 
@@ -576,13 +620,13 @@ def pair_loss_terms(
     count_anchor=False,
     count_anchor_detach=False,
 ):
-    """Per-row learned-pair set objective: log Z - gold energy, dense J (K<=12).
+    """Per-row learned-pair set objective: log Z - gold energy, disjoint pair blocks.
 
-    E3 only: the pair head emits upper-triangle J logits; this routine builds the
-    symmetric J matrix, computes the differentiable full-enumeration log partition
-    (torch_pairwise_log_partition), and returns proper joint set CE plus a BCE
-    diagnostic and an unweighted count-CE diagnostic. Not used for the 255-option
-    disjoint block DP.
+    E3b: the pair head emits upper-triangle pair-weight logits w_ij; a greedy
+    top-|w| selection picks a disjoint matching (discrete, straight-through), and
+    ``torch_pair_block_log_partition`` computes the differentiable O(K^2) log
+    partition with gradients through the selected weights. The dense-J path
+    (torch_pairwise_log_partition) is retained as a documented negative baseline.
     """
     import torch
     import torch.nn.functional as F
@@ -599,18 +643,26 @@ def pair_loss_terms(
             head = torch_count_anchor_logits(anchor_scores, head)
         n_pairs = k * (k - 1) // 2
         plog = pair_logits[i, :n_pairs].float()
-        ii_t = torch.tensor([a for a in range(k) for b in range(a + 1, k)],
-                            dtype=torch.long, device=scores.device)
-        jj_t = torch.tensor([b for a in range(k) for b in range(a + 1, k)],
-                            dtype=torch.long, device=scores.device)
-        J = torch.zeros(k, k, dtype=scores.dtype, device=scores.device)
-        J = J.index_put((ii_t, jj_t), plog)
-        J = J.index_put((jj_t, ii_t), plog)
-        logz = torch_pairwise_log_partition(scores, head, J, set(support))
+        ii = [a for a in range(k) for b in range(a + 1, k)]
+        jj = [b for a in range(k) for b in range(a + 1, k)]
+        order = sorted(range(n_pairs), key=lambda n: abs(plog[n].detach().item()), reverse=True)
+        used = set()
+        sel_pairs = []
+        sel_weights = []
+        for n in order:
+            a, b = ii[n], jj[n]
+            if a not in used and b not in used:
+                sel_pairs.append((a, b))
+                sel_weights.append(plog[n])
+                used.add(a)
+                used.add(b)
+        logz = torch_pair_block_log_partition(scores, sel_pairs, sel_weights, head, set(support))
         gold = row["target"]
-        sel = [a for a, y in enumerate(gold) if y]
+        sel = set(a for a, y in enumerate(gold) if y)
         energy = sum(scores[a] for a in sel) + head[len(sel)]
-        energy = energy + sum(J[a, b] for idx, a in enumerate(sel) for b in sel[idx + 1 :])
+        for (a, b), w in zip(sel_pairs, sel_weights):
+            if a in sel and b in sel:
+                energy = energy + w
         loss = (logz - energy) / k
         bce = F.binary_cross_entropy_with_logits(scores, q, reduction="mean")
         index = torch.tensor(support, dtype=torch.long, device=scores.device)

@@ -64,7 +64,7 @@ def main(argv=None):
 
     import train_multiselect as trainer
     from set_distillation import log_partitions
-    from pairwise_exact import exact_distribution
+    from block_pair_dp import exact_block_readout, exact_subset_nll
     from multiselect_metrics import read_dataset
     from eval_multiselect import make_batches, validate_right_padding, checkpoint_count_anchor
     from transformers import AutoConfig, AutoTokenizer, Qwen3_5ForConditionalGeneration, Qwen3_5ForCausalLM
@@ -139,33 +139,36 @@ def main(argv=None):
             scores = scores_by[row["id"]]
             head = head_by[row["id"]]
             plog = pair_by[row["id"]]
-            J = [[0.0] * k for _ in range(k)]
-            n = 0
-            for i in range(k):
-                for j in range(i + 1, k):
-                    J[i][j] = J[j][i] = plog[n]
-                    n += 1
             if count_anchor:
                 center = max(scores)
                 logz = log_partitions([s - center for s in scores])
                 head = [head[m] + logz[m] + m * center for m in range(k + 1)]
-            dist = exact_distribution(scores, head, J)
-            # joint NLL of gold under model law
+            # greedy disjoint matching from pair weights (mirrors training)
+            ii = [a for a in range(k) for b in range(a + 1, k)]
+            jj = [b for a in range(k) for b in range(a + 1, k)]
+            order = sorted(range(len(plog)), key=lambda n: abs(plog[n]), reverse=True)
+            used = set()
+            sel_pairs = []
+            sel_weights = []
+            for n in order:
+                a, b = ii[n], jj[n]
+                if a not in used and b not in used:
+                    sel_pairs.append((a, b))
+                    sel_weights.append(plog[n])
+                    used.add(a)
+                    used.add(b)
+            out = exact_block_readout(scores, sel_pairs, sel_weights, head, list(range(k + 1)))
+            # joint NLL of gold under the block law
             gold = row["target"]
-            mask = sum((1 << i) for i, y in enumerate(gold) if y)
-            p_model = dist.get(mask, 0.0)
-            p_oracle = float(o["true_set_probs"].get(str(mask), 0.0))
-            joint_nlls.append(-math.log(max(p_model, 1e-12)))
+            nll = exact_subset_nll(scores, gold, sel_pairs, sel_weights, head, list(range(k + 1)))
+            joint_nlls.append(nll)
             # count KL
-            rho_model = [0.0] * (k + 1)
-            for m, prob in dist.items():
-                rho_model[bin(m).count("1")] += prob
+            rho_model = out["count_probs"]
             rho_true = o["true_count_probs"]
             kl = sum(p * math.log(p / max(q, 1e-12)) for p, q in zip(rho_true, rho_model) if p > 0)
             count_kls.append(kl)
             if regime == "R" and true_pairs:
-                pred = _greedy_pairs(J, k, len(true_pairs))
-                edge_f1s.append(_edge_f1(true_pairs, pred))
+                edge_f1s.append(_edge_f1(true_pairs, sel_pairs))
         records.append({
             "context": cid, "regime": regime,
             "joint_nll": sum(joint_nlls) / len(joint_nlls),
