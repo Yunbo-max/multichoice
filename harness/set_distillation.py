@@ -645,7 +645,12 @@ def pair_loss_terms(
         plog = pair_logits[i, :n_pairs].float()
         ii = [a for a in range(k) for b in range(a + 1, k)]
         jj = [b for a in range(k) for b in range(a + 1, k)]
-        order = sorted(range(n_pairs), key=lambda n: abs(plog[n].detach().item()), reverse=True)
+        # Gumbel-perturbed greedy matching (straight-through): the noise lets the
+        # discrete selection explore, while gradients flow through the un-perturbed
+        # selected weights. This avoids the frozen-matching failure of pure greedy.
+        noise = -torch.log(-torch.log(torch.rand_like(plog) + 1e-9) + 1e-9)
+        noisy = plog.detach() + noise
+        order = sorted(range(n_pairs), key=lambda n: abs(noisy[n].item()), reverse=True)
         used = set()
         sel_pairs = []
         sel_weights = []
