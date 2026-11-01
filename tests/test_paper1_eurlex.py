@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from paper_static import eurlex_data as d
 from qz import make_eurlex_payloads as qz
+from qz import make_eurlex_eval_payloads as eval_qz
 
 
 class FakeTokenizer:
@@ -142,6 +143,19 @@ class QzPlanner(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"TEST"):
             qz.job_specs({},dict(manifest,test_loaded=True),repo_root="/repo",
                          data_root="/d",output_root="/runs",model_root="/m")
+
+    def test_dev_evaluation_has_no_test_access(self):
+        jobs=eval_qz.jobs({"workspace_id":"fake"},
+               "/repo", "/repo/data/eurlex", "/repo/runs/eurlex",
+               "/repo/runs/eurlex_dev",seeds=(43,))
+        self.assertEqual(len(jobs),6)
+        for job in jobs:
+            self.assertIn("--expected-split dev",job["command"])
+            self.assertIn("paper_static.eurlex_metrics",job["command"])
+            self.assertIn("--split dev",job["command"])
+            self.assertNotIn("/test.jsonl",job["command"])
+            self.assertNotIn("--unlock-test",job["command"])
+            self.assertIn("test ! -e",job["command"])
 
     def test_count_budget_preflight(self):
         manifest={"dataset":"coastalcph/lex_glue",
