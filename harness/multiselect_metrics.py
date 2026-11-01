@@ -296,9 +296,18 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
                     prefix.append(prefix[-1] + centered[index])
                 # Clipping is an explicitly labeled legacy NLL fallback, never
                 # a way to invent positive mass for MAP decoding.
-                map_logs = (log_counts if "count_log_probs" in record else
-                            [math.log(p) if p > 0 else -math.inf for p in counts])
-                map_count = max(sorted(support), key=lambda m: (map_logs[m] + prefix[m] - logz[m], -m))
+                raw_count = record.get("count_residual_logits")
+                if raw_count is not None:
+                    # Exact set MAP: argmax_m [sum_{top-m} s_i + a_m], matching
+                    # structured_prediction. prefix[m] + m*center restores the
+                    # un-centered top-m score sum.
+                    center = max(scores)
+                    map_count = max(sorted(support),
+                                    key=lambda m: (raw_count[m] + prefix[m] + m * center, -m))
+                else:
+                    map_logs = (log_counts if "count_log_probs" in record else
+                                [math.log(p) if p > 0 else -math.inf for p in counts])
+                    map_count = max(sorted(support), key=lambda m: (map_logs[m] + prefix[m] - logz[m], -m))
                 if selected != sorted(order[:map_count]):
                     raise ValueError(f"{ident}: supplied set_map indices do not match the declared structured law")
                 gold_logp = (log_counts[sum(target)]
