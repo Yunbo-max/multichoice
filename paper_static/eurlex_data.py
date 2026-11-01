@@ -73,6 +73,8 @@ def label_catalog(class_names, descriptors):
     options = []
     for eurovoc_id in names:
         value = descriptors.get(eurovoc_id)
+        if isinstance(value, dict):
+            value = value.get("en")
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"missing verified EuroVoc descriptor for {eurovoc_id}")
         options.append({"key": eurovoc_id, "desc": value.strip()})
@@ -118,13 +120,20 @@ def prompt_length(tokenizer, row, labels):
 
 
 def shorten_document(tokenizer, row, labels, max_prompt_tokens, head_ratio=0.75):
-    """Return a copy with only document tokens reduced; check ACTUAL prompt."""
+    """Return a copy with only document tokens reduced; check ACTUAL prompt.
+
+    The 100 options + chat template are tokenized once (empty-document base) and
+    the prompt length is base + document_tokens, so we do not re-tokenize the
+    fixed 100-option block for every document. The final kept length is verified
+    with one exact prompt_length call.
+    """
     if not (isinstance(max_prompt_tokens, int) and max_prompt_tokens >= 512):
         raise ValueError("max_prompt_tokens must be >=512")
     if not 0 < head_ratio < 1:
         raise ValueError("head_ratio must be strictly between zero and one")
     empty_row = {**row, "state": ""}
     base = prompt_length(tokenizer, empty_row, labels)
+    marker_tokens = len(tokenizer.encode(TRUNCATION_MARKER, add_special_tokens=False))
     if base + 32 >= max_prompt_tokens:
         raise ValueError(f"100 options + chat template already require {base} tokens; "
                          f"max={max_prompt_tokens} leaves no document budget")
@@ -133,34 +142,37 @@ def shorten_document(tokenizer, row, labels, max_prompt_tokens, head_ratio=0.75)
     original_tokens = len(original_ids)
     if original_tokens + base + 8 < max_prompt_tokens:
         result = {**row}
-        actual = prompt_length(tokenizer, result, labels)
-        if actual <= max_prompt_tokens:
-            return result, {"original_document_tokens": original_tokens,
-                            "kept_document_tokens": original_tokens,
-                            "prompt_tokens": actual, "truncated": False}
-    # The marker is accounted for by the final exact-prompt verification.
-    low, high, chosen, length = 0, min(original_tokens, max_prompt_tokens - base), None, None
+        return result, {"original_document_tokens": original_tokens,
+                        "kept_document_tokens": original_tokens,
+                        "prompt_tokens": base + original_tokens, "truncated": False}
+    # Binary search over the kept document length; prompt length is
+    # base + keep + marker_tokens (the marker replaces the middle slice).
+    # Reserve a few tokens because decode/encode round-trips can drift by a
+    # token at character boundaries.
+    budget = max_prompt_tokens - base - marker_tokens - 4
+    low, high = 0, min(original_tokens, budget)
+    keep = 0
     while low <= high:
-        keep = (low + high) // 2
-        left = min(keep, int(math.ceil(keep * head_ratio)))
-        right = keep - left
-        candidate = (
-            tokenizer.decode(original_ids[:left], skip_special_tokens=False)
-            + TRUNCATION_MARKER
-            + (tokenizer.decode(original_ids[-right:], skip_special_tokens=False) if right else "")
-        )
-        item = {**row, "state": candidate}
-        n = prompt_length(tokenizer, item, labels)
-        if n <= max_prompt_tokens:
-            chosen, length = (item, (keep, n))
-            low = keep + 1
+        mid = (low + high) // 2
+        if base + mid + marker_tokens <= max_prompt_tokens:
+            keep = mid
+            low = mid + 1
         else:
-            high = keep - 1
-    if chosen is None or length[0] == 0:
-        raise ValueError("token budget left no usable legal document")
-    return chosen, {"original_document_tokens": original_tokens,
-                    "kept_document_tokens": length[0],
-                    "prompt_tokens": length[1], "truncated": True}
+            high = mid - 1
+    left = min(keep, int(math.ceil(keep * head_ratio)))
+    right = keep - left
+    candidate = (
+        tokenizer.decode(original_ids[:left], skip_special_tokens=False)
+        + TRUNCATION_MARKER
+        + (tokenizer.decode(original_ids[-right:], skip_special_tokens=False) if right else "")
+    )
+    item = {**row, "state": candidate}
+    actual = prompt_length(tokenizer, item, labels)
+    if actual > max_prompt_tokens:
+        raise ValueError(f"truncation overshoot: {actual} > {max_prompt_tokens}")
+    return item, {"original_document_tokens": original_tokens,
+                  "kept_document_tokens": keep,
+                  "prompt_tokens": actual, "truncated": True}
 
 
 def convert_split(records, split, options, *, tokenizer=None, labels=None,
@@ -170,6 +182,7 @@ def convert_split(records, split, options, *, tokenizer=None, labels=None,
     if (tokenizer is None) != (labels is None):
         raise ValueError("tokenizer and answer slots must be provided together")
     seen_ids, output, stats = set(), [], []
+    by_key = {}
     for n, source in enumerate(records):
         text = source.get("text")
         target_ids = source.get("labels")
@@ -180,9 +193,16 @@ def convert_split(records, split, options, *, tokenizer=None, labels=None,
         ) or len(set(target_ids)) != len(target_ids):
             raise ValueError(f"{split}:{n}: invalid ClassLabel indices")
         txt_key = stable_text_key(text)
-        if txt_key in seen_ids:
-            raise ValueError(f"{split}:{n}: duplicate legal document in the split")
+        if txt_key in by_key:
+            # The official EUR-LEX split re-lists the same legal document under
+            # different EuroVoc label sets; merge them into one multi-label row.
+            existing = output[by_key[txt_key]]
+            merged = sorted(set(existing["_labels"]) | set(target_ids))
+            existing["_labels"] = merged
+            existing["target"] = [int(i in merged) for i in range(100)]
+            continue
         seen_ids.add(txt_key)
+        by_key[txt_key] = len(output)
         row = {
             "id": f"eurlex:{split}:{n:06d}",
             "source": "lexglue_eurlex", "lang": "en",
@@ -191,12 +211,15 @@ def convert_split(records, split, options, *, tokenizer=None, labels=None,
             "state": text.strip(), "question": QUESTION,
             "options": options, "n_options": 100,
             "selection_mode": "multi", "allow_empty": True,
+            "_labels": list(target_ids),
             "target": [int(i in target_ids) for i in range(100)],
         }
         if tokenizer is not None:
             row, info = shorten_document(tokenizer, row, labels, max_prompt_tokens)
             stats.append(info)
         output.append(row)
+    for row in output:
+        row.pop("_labels", None)
     return output, {"n": len(output), "positive_count_histogram": dict(sorted(
         Counter(sum(r["target"]) for r in output).items())),
         "document_fingerprints": sorted(seen_ids),
