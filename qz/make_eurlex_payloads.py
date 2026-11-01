@@ -51,6 +51,14 @@ def job_specs(template, manifest, *, repo_root, data_root, output_root,
         raise ValueError("invalid context/microbatch budget")
     if manifest.get("max_input_tokens") != max_input:
         raise ValueError("input token cap differs from the audited data package")
+    source_hashes = (manifest.get("pilot_files") if pilot else manifest["splits"])
+    key_dev = "dev" if pilot else "validation"
+    if not isinstance(source_hashes, dict) or any(
+        not isinstance(source_hashes.get(name, {}).get("sha256"), str)
+        or len(source_hashes[name]["sha256"]) != 64
+        for name in ("train", key_dev)
+    ):
+        raise ValueError("train/DEV SHA256 missing; regenerate audited EUR-LEX package")
     count = (manifest.get("pilot", {}).get("train") if pilot
              else manifest["splits"]["train"]["n"])
     if count is None or (count + batch - 1) // batch < max(warm_steps, continuation_steps):
@@ -106,6 +114,8 @@ def job_specs(template, manifest, *, repo_root, data_root, output_root,
             "cd " + shlex.quote(str(root)),
         ]
         # Validate that remote data remains the same SHA and no test exists.
+        expected_train_hash = source_hashes["train"]["sha256"]
+        expected_dev_hash = source_hashes[key_dev]["sha256"]
         verify = (
             "import json,pathlib,hashlib;"
             f"p=pathlib.Path({str(data / 'manifest.json')!r});"
@@ -113,6 +123,9 @@ def job_specs(template, manifest, *, repo_root, data_root, output_root,
             "assert j['dataset']=='coastalcph/lex_glue' and not j['test_loaded'];"
             "assert len(j['label_ids'])==100;"
             f"assert j['max_input_tokens']=={max_input};"
+            "sha=lambda x:hashlib.sha256(pathlib.Path(x).read_bytes()).hexdigest();"
+            f"assert sha({str(train)!r})=={expected_train_hash!r};"
+            f"assert sha({str(dev)!r})=={expected_dev_hash!r};"
         )
         checks.append(shlex.quote(str(root / ".venv-sii/bin/python"))
                       + " -c " + shlex.quote(verify))
