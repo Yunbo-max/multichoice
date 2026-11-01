@@ -218,6 +218,9 @@ def structured_prediction(scores, count_logits, row, count_anchor=False, zero_co
     support = allowed_counts(row)
     if zero_count_head:
         count_logits = [0.0] * len(count_logits)
+    # Keep the raw count-head residual a_m for the exact set MAP; the anchored
+    # count law (a_m + log Z_m) is used only for the count distribution rho.
+    raw_count = list(count_logits)
     if count_anchor:
         count_logits = count_anchor_logits(scores, count_logits)
     if any(not math.isfinite(count_logits[m]) for m in support):
@@ -232,8 +235,10 @@ def structured_prediction(scores, count_logits, row, count_anchor=False, zero_co
     prefix = [0.0]
     for index in order:
         prefix.append(prefix[-1] + centered[index])
-    # Tie: smallest m, then lowest option indices. Count mode alone is not MAP.
-    best_m = max(support, key=lambda m: (log_rho[m] + prefix[m] - logz[m], -m))
+    # Exact set MAP: argmax_m [ sum_{top-m} s_i + a_m ]. The top-m score sum is
+    # prefix[m] + m*center (centered prefix restored by the shared max shift).
+    # log_rho + prefix - logz over-penalises large m for non-anchored heads.
+    best_m = max(support, key=lambda m: (raw_count[m] + prefix[m] + m * center, -m))
     return {
         "p": structured_marginals(centered, rho),
         "count_probs": rho,
