@@ -18,6 +18,8 @@ def tune(rows, predictions, thresholds=None):
     thresholds=thresholds or [i/100 for i in range(5,96,5)]
     if len(set(thresholds)) != len(thresholds) or any(not 0<t<1 for t in thresholds):
         raise ValueError("invalid, duplicate or out-of-range thresholds")
+    if any(p.get("decoder")=="set_map" for p in predictions):
+        raise ValueError("do not tune a BCE threshold on structured set_map predictions")
     records=prediction_records(rows,predictions,.5,decoder="protocol")
     if any(r["source"]!="lexglue_eurlex" or len(r["target"])!=100 for r in records):
         raise ValueError("this protocol expects full 100-label EUR-LEX")
