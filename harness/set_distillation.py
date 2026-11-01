@@ -545,6 +545,7 @@ def set_loss_terms(
     *,
     loss_family="set_ce",
     count_weight=1.0,
+    gold_count_weight=1.0,
     count_anchor=False,
     count_anchor_detach=False,
 ):
@@ -561,6 +562,8 @@ def set_loss_terms(
     the explicit marginal-only ablation, not an incoherent set target.
     """
     validate_set_loss_options(loss_family, count_weight, count_target)
+    if not math.isfinite(gold_count_weight) or gold_count_weight <= 0:
+        raise ValueError("gold_count_weight must be finite and positive")
     if count_anchor_detach and not count_anchor:
         raise ValueError("count_anchor_detach requires count_anchor")
     import torch
@@ -585,7 +588,9 @@ def set_loss_terms(
         if count_target == "gold":
             count_ce = -log_count[support.index(sum(row["target"]))] / k
             # This control keeps the same head and decoder, distilling only q.
-            loss = bce + count_ce
+            # Previous K-normalized Count CE underweights a count classifier at K=100.
+            # Explicitly swept weight is a strong BCE+learned-count baseline.
+            loss = bce + gold_count_weight * count_ce
         else:
             count_ce = -(rho[index] * log_count).sum() / k
             if loss_family == "set_ce":
