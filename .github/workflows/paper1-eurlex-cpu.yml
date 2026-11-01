@@ -6,6 +6,7 @@ on:
     paths:
       - paper_static/eurlex_data.py
       - qz/make_eurlex_payloads.py
+      - qz/make_eurlex_eval_payloads.py
       - paper_static/eurlex_metrics.py
       - tests/test_paper1_eurlex_metrics.py
       - harness/set_distillation.py
@@ -22,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Static syntax verification
-        run: python -m py_compile paper_static/eurlex_data.py qz/make_eurlex_payloads.py harness/set_distillation.py harness/train_multiselect.py paper_static/eurlex_metrics.py tests/test_paper1_eurlex.py tests/test_paper1_eurlex_metrics.py
+        run: python -m py_compile paper_static/eurlex_data.py qz/make_eurlex_payloads.py qz/make_eurlex_eval_payloads.py harness/set_distillation.py harness/train_multiselect.py paper_static/eurlex_metrics.py tests/test_paper1_eurlex.py tests/test_paper1_eurlex_metrics.py
       - name: Offline dataset, prompt and job regressions
         run: python -m unittest discover -s tests -p test_paper1_eurlex.py -v
       - name: Offline EUR-LEX F1 and proper joint NLL checks
