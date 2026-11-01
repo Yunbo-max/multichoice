@@ -1,0 +1,25 @@
+name: Paper 1 EUR-LEX CPU preflight
+on:
+  push:
+    branches:
+      - research/static-setjev-paper-20261027
+    paths:
+      - paper_static/eurlex_data.py
+      - qz/make_eurlex_payloads.py
+      - harness/set_distillation.py
+      - harness/train_multiselect.py
+      - tests/test_paper1_eurlex.py
+      - .github/workflows/paper1-eurlex-cpu.yml
+  workflow_dispatch:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Static syntax verification
+        run: python -m py_compile paper_static/eurlex_data.py qz/make_eurlex_payloads.py harness/set_distillation.py harness/train_multiselect.py tests/test_paper1_eurlex.py
+      - name: Offline dataset, prompt and job regressions
+        run: python -m unittest discover -s tests -p test_paper1_eurlex.py -v
