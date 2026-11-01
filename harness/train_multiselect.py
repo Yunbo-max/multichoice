@@ -1380,6 +1380,11 @@ def main():
         help="count CE weight for marginal/count controls; exact set CE requires 1",
     )
     parser.add_argument(
+        "--gold-count-weight", type=float, default=1.0,
+        help="BCE+gold count CE only: multiplier on existing /K count CE; "
+             "use K to weight full count CE comparably to candidate-mean BCE",
+    )
+    parser.add_argument(
         "--gold-weight",
         type=float,
         default=0.0,
@@ -1479,6 +1484,12 @@ def main():
         parser.error(
             "exact set CE requires --count-weight 1; use a marginal control to change its weight"
         )
+    if not math.isfinite(args.gold_count_weight) or args.gold_count_weight <= 0:
+        parser.error("--gold-count-weight must be finite and > 0")
+    if args.gold_count_weight != 1.0 and not (
+        args.objective == "set" and args.count_target == "gold"
+    ):
+        parser.error("--gold-count-weight other than 1 requires --objective set --count-target gold")
     if args.count_target == "gold" and args.set_loss != "set_ce":
         parser.error(
             "--count-target gold is the legacy marginal-only control; omit it for --set-loss controls"
@@ -1660,6 +1671,7 @@ def main():
                 "count_target": args.count_target,
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
+                "gold_count_weight": args.gold_count_weight,
                 "count_anchor": args.count_anchor,
                         "count_anchor_detach": args.count_anchor_detach,
                 "gold_weight": args.gold_weight,
@@ -1982,6 +1994,7 @@ def main():
                         loss_config={
                             "set_loss": args.set_loss,
                             "count_weight": args.count_weight,
+                            "gold_count_weight": args.gold_count_weight,
                             "count_target": args.count_target,
                             "count_anchor": args.count_anchor,
                             "count_anchor_detach": args.count_anchor_detach,
@@ -2008,6 +2021,7 @@ def main():
                     loss_config={
                         "set_loss": args.set_loss,
                         "count_weight": args.count_weight,
+                        "gold_count_weight": args.gold_count_weight,
                         "count_target": args.count_target,
                         "count_anchor": args.count_anchor,
                         "count_anchor_detach": args.count_anchor_detach,
@@ -2054,6 +2068,7 @@ def main():
                     count_target=args.count_target,
                     loss_family=args.set_loss,
                     count_weight=args.count_weight,
+                    gold_count_weight=args.gold_count_weight,
                     count_anchor=args.count_anchor,
                     count_anchor_detach=args.count_anchor_detach,
                 )
@@ -2233,6 +2248,7 @@ def main():
                 "count_target": args.count_target,
                 "set_loss": args.set_loss,
                 "count_weight": args.count_weight,
+                "gold_count_weight": args.gold_count_weight,
                 "count_anchor": args.count_anchor,
                         "count_anchor_detach": args.count_anchor_detach,
                 "gold_weight": args.gold_weight,
