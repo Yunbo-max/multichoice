@@ -20,13 +20,16 @@ ARMS = {
         "--objective", "set", "--set-loss", "set_ce",
         "--count-target", "gold", "--gold-count-weight", "100"
     ],
-    "set_ce_independent": ["--objective", "set", "--set-loss", "set_ce"],
+    "set_ce_independent": ["--objective", "set", "--set-loss", "set_ce",
+                           "--count-lr-mult", "100"],
     "set_ce_anchor": [
-        "--objective", "set", "--set-loss", "set_ce", "--count-anchor"
+        "--objective", "set", "--set-loss", "set_ce", "--count-anchor",
+        "--count-lr-mult", "100",
     ],
     "set_ce_anchor_detach": [
         "--objective", "set", "--set-loss", "set_ce",
-        "--count-anchor", "--count-anchor-detach"
+        "--count-anchor", "--count-anchor-detach",
+        "--count-lr-mult", "100",
     ],
 }
 

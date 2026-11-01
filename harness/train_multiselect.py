@@ -1367,6 +1367,8 @@ def main():
                         help="pair objective: number of upper-triangle J logits (K*(K-1)//2)")
     parser.add_argument("--pair-lr-mult", type=float, default=1.0,
                         help="pair objective: multiplier on the pair-head learning rate")
+    parser.add_argument("--count-lr-mult", type=float, default=1.0,
+                        help="set/pair objective: multiplier on the count-head learning rate")
     parser.add_argument(
         "--set-loss",
         choices=["set_ce", "independent_marginal", "induced_marginal"],
@@ -1811,16 +1813,24 @@ def main():
 
         model = DDP(wrapper.to(device), device_ids=[local], broadcast_buffers=False)
     params = [parameter for parameter in model.parameters() if parameter.requires_grad]
-    if args.objective == "pair" and args.pair_lr_mult != 1.0:
+    if (args.count_lr_mult != 1.0) or (args.objective == "pair" and args.pair_lr_mult != 1.0):
+        count_params = [p for n, p in model.named_parameters()
+                        if p.requires_grad and "count_head" in n]
         pair_params = [p for n, p in model.named_parameters()
                        if p.requires_grad and "pair_head" in n]
         other_params = [p for n, p in model.named_parameters()
-                        if p.requires_grad and "pair_head" not in n]
+                        if p.requires_grad and "count_head" not in n and "pair_head" not in n]
+        groups = []
+        if other_params:
+            groups.append({"params": other_params, "lr": args.lr, "base_lr": args.lr})
+        if count_params:
+            groups.append({"params": count_params, "lr": args.lr * args.count_lr_mult,
+                           "base_lr": args.lr * args.count_lr_mult})
+        if pair_params:
+            groups.append({"params": pair_params, "lr": args.lr * args.pair_lr_mult,
+                           "base_lr": args.lr * args.pair_lr_mult})
         optimizer = torch.optim.AdamW(
-            [{"params": other_params, "lr": args.lr, "base_lr": args.lr},
-             {"params": pair_params, "lr": args.lr * args.pair_lr_mult,
-              "base_lr": args.lr * args.pair_lr_mult}],
-            betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0, foreach=False,
+            groups, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0, foreach=False,
         )
     else:
         optimizer = torch.optim.AdamW(
