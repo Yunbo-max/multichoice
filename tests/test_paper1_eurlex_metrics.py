@@ -8,6 +8,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from paper_static.eurlex_metrics import score
+from paper_static.eurlex_tune_threshold import tune
 from harness.set_distillation import input_digest, structured_prediction
 
 
@@ -45,6 +46,20 @@ class EurlexMetrics(unittest.TestCase):
         self.assertEqual(report["n_predicted_positive"],2)
         with self.assertRaisesRegex(ValueError,"complete fixed 100"):
             score([row],[pred],expected_k=99)
+
+    def test_dev_only_threshold_search_and_structured_rejection(self):
+        row=gold_row()
+        s=candidate_scores(100)
+        pred={"id":row["id"],"logits":s,
+              "p":[1/(1+math.exp(-z)) for z in s],
+              "option_keys":[o["key"] for o in row["options"]],
+              "input_digest":input_digest(row)}
+        report=tune([row],[pred],[0.4,0.5,0.6])
+        self.assertEqual(report["status"],"DEV_THRESHOLD_SELECTION_ONLY")
+        self.assertAlmostEqual(report["best"]["micro_f1"]["micro_f1"],1.0)
+        self.assertAlmostEqual(report["best"]["micro_f1"]["threshold"],0.4)
+        with self.assertRaisesRegex(ValueError,"structured set_map"):
+            tune([row],[dict(pred,decoder="set_map")],[0.5])
 
     def test_anchor_same_legal_support_with_zero_residual(self):
         row=gold_row()
