@@ -95,6 +95,7 @@ class DataConversion(unittest.TestCase):
             self.assertFalse(m["test_loaded"])
             self.assertFalse((output/"test.jsonl").exists())
             self.assertEqual(m["pilot"]["train"],1)
+            self.assertEqual(len(m["pilot_files"]["train"]["sha256"]),64)
             train=[json.loads(s) for s in (output/"train.jsonl").read_text().splitlines()]
             self.assertEqual(len(train),2)
             self.assertTrue(all(len(z["options"])==100 for z in train))
@@ -113,8 +114,10 @@ class QzPlanner(unittest.TestCase):
             "dataset":"coastalcph/lex_glue",
             "test_loaded":False,
             "label_ids":[str(100163+i) for i in range(100)],
-            "splits":{"train":{"n":55000},"validation":{"n":5000}},
+            "splits":{"train":{"n":55000,"sha256":"a"*64},
+                      "validation":{"n":5000,"sha256":"b"*64}},
             "pilot":{"train":5000,"dev":1000},
+            "pilot_files":{"train":{"sha256":"c"*64}, "dev":{"sha256":"d"*64}},
             "max_input_tokens":8192,
         }
         jobs=qz.job_specs({"workspace_id":"mock","framework":"pytorch"},
@@ -143,8 +146,11 @@ class QzPlanner(unittest.TestCase):
     def test_count_budget_preflight(self):
         manifest={"dataset":"coastalcph/lex_glue",
                   "test_loaded":False, "label_ids":[str(i) for i in range(100)],
-                  "splits":{"train":{"n":55000},"validation":{"n":5000}},
-                  "pilot":{"train":4,"dev":1}, "max_input_tokens":8192}
+                  "splits":{"train":{"n":55000,"sha256":"a"*64},
+                            "validation":{"n":5000,"sha256":"b"*64}},
+                  "pilot":{"train":4,"dev":1},
+                  "pilot_files":{"train":{"sha256":"c"*64},"dev":{"sha256":"d"*64}},
+                  "max_input_tokens":8192}
         with self.assertRaisesRegex(ValueError,"optimizer"):
             qz.job_specs({},manifest,repo_root="/repo",data_root="/d",
                          output_root="/runs",model_root="/m",seeds=(43,))
