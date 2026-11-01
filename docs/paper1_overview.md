@@ -1,3 +1,5 @@
+> **Scope update, 2026-11-01:** New Paper 1 main experiment is **EUR-LEX only**. [Locked single-benchmark protocol](paper1_eurlex_only_main_experiment.md). Any RoMQA, ECtHR, SATA or other benchmark in this document is historical/planned, not part of the currently approved run. Prior E0–E4 experiments remain historical results; no additional GPU jobs are implied.
+
 # Beyond Independent Choices: When Do Decision Models Need Structured Set Prediction?
 
 Branch: `research/static-setjev-paper-20261027`. A consolidated summary of
