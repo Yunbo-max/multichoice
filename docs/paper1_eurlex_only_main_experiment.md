@@ -1,3 +1,5 @@
+> **Implementation update (2026-11-01):** The single-benchmark EUR-LEX data converter, hash-audited QZ pilot/evaluation payload generators, learned-count loss scaling, official F1/proper-NLL scorer, and DEV threshold tuning have been implemented and pass offline GitHub Actions checks. See [the runnable end-to-end manual](paper1_eurlex_execution.md). Real dataset download, actual 4B pilot, final Test and PyTorch gradient checks remain UNRUN; no new performance claim is made.
+
 # Paper 1 — SINGLE main benchmark locked: LexGLUE EUR-LEX (2026-11-01)
 
 **Decision:** Only LexGLUE EUR-LEX is the NEW main benchmark to train and test. No simultaneous ECtHR/SATA/RoMQA/other datasets. Previous CMB + MultiRC checkpoints and the already opened 2,140-row Test may be mentioned only as historical negative-control results, **not** used to tune this project.
