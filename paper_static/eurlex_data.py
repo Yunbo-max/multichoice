@@ -263,10 +263,14 @@ def save_package(directory, records, options, *, provenance, pilot_train=5000,
         paths[part] = {"path": fname, "sha256": digest_file(path), "n": len(rows)}
     pilot = directory / "pilot"
     pilot.mkdir()
+    pilot_files = {}
     for name, items in (("train", _choose_pilot(converted["train"], pilot_train, 43)),
                         ("dev", _choose_pilot(converted["validation"], pilot_dev, 44))):
         if items:
-            write_jsonl(pilot / f"{name}.jsonl", items)
+            local = pilot / f"{name}.jsonl"
+            write_jsonl(local, items)
+            pilot_files[name] = {"path": str(local.relative_to(directory)),
+                                 "sha256": digest_file(local), "n": len(items)}
     manifest = {
         "dataset": DATASET_ID, "config": CONFIG, "provenance": provenance,
         "allowed_counts": "0..100 (no label-informed restrictions)",
@@ -278,6 +282,7 @@ def save_package(directory, records, options, *, provenance, pilot_train=5000,
         "test_loaded": "test" in records,
         "splits": paths, "audit": audit,
         "pilot": {"train": pilot_train, "dev": pilot_dev},
+        "pilot_files": pilot_files,
         "max_input_tokens": max_prompt_tokens if tokenizer else None,
         "status": "DATA_PREPARED_NOT_MODEL_TRAINED",
     }
