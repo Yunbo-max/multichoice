@@ -123,19 +123,23 @@ continuation are separate passes from a shared checkpoint.
 ## P1b — frozen BCE scores and independent/anchored CountHead controls
 
 The same 4B checkpoint is used for both cached feature exports. It must
-be a finalized standalone BCE HF checkpoint (e.g. common warm BCE
-from the completed Pilot, or the improved full5k warm if available).
+be a finalized standalone BCE HF checkpoint with **adequate candidate-score
+calibration**. The 120-step warm BCE is NOT sufficient: its option logits are
+almost all negative (mean ~-3.8, only 0.16% positive, DEV micro-F1 0.083),
+so the exact set-MAP collapses to near-empty sets (mean count 0.73, micro-F1
+0.028) regardless of the count head. Use the 320-step bce_continue export
+(DEV micro-F1 0.435) or the full-5k warm BCE when available.
 
 ~~~bash
-BCE="$R/runs/paper1_eurlex_pilot/warm_bce/final"
-CACHE="$R/runs/eurlex_frozen_p1/cache"
+BCE="$R/runs/paper1_eurlex_pilot/bce_continue/seed_43/final"
+CACHE="$R/runs/eurlex_frozen_p1/cache_bce320"
 
 python -m qz.make_eurlex_frozen_cache_payloads \
   --template qz_c64/c64-warm-bce.json \
   --manifest "$R/data/eurlex_decision_v1/manifest.json" \
   --repo-root "$R" --data-root "$R/data/eurlex_decision_v1" \
   --bce-checkpoint "$BCE" --cache-root "$CACHE" \
-  --output-dir "$R/qz_eurlex_frozen_extract_v1"
+  --output-dir "$R/qz_eurlex_frozen_extract_v2"
 # REVIEW both JSON files; separately submit to QZ (does not use Test).
 # Extraction is ONE frozen inference pass per train/dev row.
 
@@ -144,7 +148,7 @@ python -m paper_static.eurlex_frozen_head_jobs \
   --train-gold "$R/data/eurlex_decision_v1/pilot/train.jsonl" \
   --dev-gold "$D" \
   --output-root "$R/runs/eurlex_frozen_p1" \
-  --plan-dir "$R/qz_eurlex_frozen_heads_v1" \
+  --plan-dir "$R/qz_eurlex_frozen_heads_v2" \
   --seed 43 44 45 \
   --lr 0.001 0.0003 \
   --steps 600 --batch 64 \
@@ -152,7 +156,7 @@ python -m paper_static.eurlex_frozen_head_jobs \
   --python "$R/.venv-sii/bin/python"
 
 # After cache files exist and match both Gold SHA256 values:
-bash "$R/qz_eurlex_frozen_heads_v1/run_cpu_heads.sh"
+bash "$R/qz_eurlex_frozen_heads_v2/run_cpu_heads.sh"
 ~~~
 
 The generated `run_cpu_heads.sh` sets `OMP_NUM_THREADS` (default 4). The
