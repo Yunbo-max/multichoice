@@ -72,7 +72,7 @@ def _bootstrap_pair(rows, primary,baseline, *, samples=200, seed=43):
     """Cluster paired question bootstrap; threshold frozen on original DEV."""
     if samples<1:
         raise ValueError("bootstrap samples must be positive")
-    if len(rows)!=len(primary)!=len(baseline):
+    if not (len(rows)==len(primary)==len(baseline)):
         raise ValueError("invalid paired cohort")
     groups=defaultdict(list)
     for i,row in enumerate(rows):
@@ -103,6 +103,8 @@ def analyze(rows, models, *, bootstrap=200, seed=20261102):
     decisions={}
     per_item={}
     for arm, saved in models.items():
+        if any(not isinstance(p.get("checkpoint_id"),str) or not p.get("checkpoint_id") for p in saved):
+            raise ValueError(f"{arm}: missing checkpoint identity")
         if len({p.get("checkpoint_id") for p in saved})>1:
             raise ValueError(f"{arm}: mixed checkpoint identifiers")
         records=prediction_records(rows,saved,threshold=.5,decoder="auto")
