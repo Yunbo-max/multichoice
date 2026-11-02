@@ -1,0 +1,20 @@
+{
+  "workspace_id": "ws-9dcc0e1f-80a4-4af2-bc2f-0e352e7b17e6",
+  "project_id": "project-160ccb20-98ab-4538-a847-01d1f83d5b0f",
+  "logic_compute_group_id": "lcg-71b971a7-5bdd-4798-b5ba-08f1eabde49e",
+  "name": "paper1-eurlex-pilot-set_ce_independent-s43",
+  "description": "EUR-LEX train/DEV only; no test; Qwen3.5-4B LoRA; arm=set_ce_independent-s43; common warm-start; status=STAGED_NOT_SUBMITTED",
+  "framework": "pytorch",
+  "command": "set -euo pipefail\nexport HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONUNBUFFERED=1\nexport TOKENIZERS_PARALLELISM=false\nexport PYTHONPATH=/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\ntest -s /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/pilot/train.jsonl\ntest -s /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/pilot/dev.jsonl\ntest -s /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/manifest.json\ntest -s /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper1_eurlex_pilot/warm_bce/final/config.json\ntest ! -e /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper1_eurlex_pilot/set_ce_independent/seed_43\nmkdir -p /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/logs/qz/eurlex\ncd /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev\n/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/.venv-sii/bin/python -c 'import json,pathlib,hashlib;p=pathlib.Path('\"'\"'/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/manifest.json'\"'\"');j=json.loads(p.read_text());assert j['\"'\"'dataset'\"'\"']=='\"'\"'coastalcph/lex_glue'\"'\"' and not j['\"'\"'test_loaded'\"'\"'];assert len(j['\"'\"'label_ids'\"'\"'])==100;assert j['\"'\"'max_input_tokens'\"'\"']==8192;sha=lambda x:hashlib.sha256(pathlib.Path(x).read_bytes()).hexdigest();assert sha('\"'\"'/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/pilot/train.jsonl'\"'\"')=='\"'\"'dfc552fee910a0306dc001658645adff43c4b4ed48ecdd2b666e6fd0a9a5a19b'\"'\"';assert sha('\"'\"'/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/pilot/dev.jsonl'\"'\"')=='\"'\"'5c4326e4e475a45c3cae6c1b50760a1959d0e2ece30e3e3c7f4147dc55bb592a'\"'\"';'\n/inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/.venv-sii/bin/torchrun --standalone --nnodes 1 --nproc_per_node 1 /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/harness/train_multiselect.py --model /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper1_eurlex_pilot/warm_bce/final --train /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/pilot/train.jsonl --dev /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/data/eurlex_decision_v1/pilot/dev.jsonl --modules /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/innerjev/configs/4B/modules.json --target gold --global-batch 8 --epochs 1 --eval-every-frac 1.0 --lr 2e-05 --lora --lora-r 16 --lora-alpha 32 --max-input-tokens 8192 --max-batch-tokens 8192 --expect-trainable 0 --seed 43 --max-steps 200 --output /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/runs/paper1_eurlex_pilot/set_ce_independent/seed_43 --objective set --set-loss set_ce --count-lr-mult 100 > /inspire/hdd/global_user/zhangjiaquan-253108540222/baseline/jev/logs/qz/eurlex/pilot-set_ce_independent-s43.log 2>&1\n",
+  "max_running_time_ms": "10800000",
+  "task_priority": 4,
+  "framework_config": [
+    {
+      "image": "docker.sii.shaipower.online/inspire-studio/relay2:v2",
+      "image_type": "SOURCE_PRIVATE",
+      "instance_count": 1,
+      "spec_id": "79fe954a-be92-4772-ac0b-94ad8a79b7bb",
+      "shm_gi": 100
+    }
+  ]
+}
