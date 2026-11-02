@@ -1,68 +1,110 @@
-# Paper 1 — EUR-LEX pilot results and the two decode/budget fixes
+# Paper 1 — EUR-LEX pilot results and corrected Set-MAP audit
 
-Branch: `research/static-setjev-paper-20261027`. Date: 2026-11-01.
-Seed-43 single-H100 LoRA pilot on the 100-label EUR-LEX main benchmark
-(5k train / 1k dev), 120 BCE warm steps + 200 continuation steps. Two
-implementation bugs were found and fixed during this pilot; the final numbers
-below reflect both fixes.
+Branch: research/static-setjev-paper-20261027. Pilot measured on 2026-11-01;
+**critical mathematical correction dated 2026-11-02**.
 
-## Bugs fixed
+**Status:** Qwen3.5-4B seed-43, single H100, EUR-LEX 100-label 5k Train /
+1k DEV, 120 BCE warm steps + 200 matched continuation steps. These
+are DEV pilot scores, NOT full official EUR-LEX Test results.
+The published raw results were generated BEFORE the 2026-11-02
+Independent Set-MAP fix and must not be used as a new final-method ranking.
 
-1. **Count-head underfit at K=100.** `count_ce = -(rho·log_count).sum()/k`
-   divides the count loss by K, so at K=100 the count-head gradient shrinks
-   100x and its weights stay ~1e-3 (count_ce 0.0216→0.0214 over 80 steps).
-   Fix: `--count-lr-mult` (default 1), set to 100 for the set_ce arms, and
-   raise continuation steps to 200. `--count-lr-mult 300` diverged.
+## Confirmed training issue: count-head undertraining at K=100
 
-2. **set-MAP over-penalises large counts for non-anchored heads.** The exact
-   set MAP was computed as `log_rho[m] + prefix[m] - logz[m]`; for a
-   non-anchored head `log_rho` lacks `log Z_m`, so `-logz[m]` shrinks the
-   predicted count. goldcount's count mode was 5.73 but set-MAP chose 2.02.
-   Fix: MAP = `argmax_m [ sum_{top-m} s_i + a_m ]` (raw residual + restored
-   prefix). Anchor is unchanged (its `log Z_m` cancels).
+Set CE contains a count cross-entropy component divided by K. At K=100,
+the count-head gradient was initially weak: per-item count_ce changed
+~0.0216 -> ~0.0214 over 80 steps. The --count-lr-mult control was
+added (100 used for the rerun) and continuation increased to 200 steps.
+Count LR multiplier 300 caused divergence. A correctly scaled
+BCE + Gold Count baseline uses --gold-count-weight=100; these are
+distinct head-LR and loss-scaling changes, so do not interpret them as
+a randomized single-factor ablation.
 
-## Results (seed 43, dev, 200 continuation steps)
+## Retracted prior decoding explanation (important)
 
-| arm | set-MAP microF1 | best threshold microF1 (thr) | mean predicted count |
+A November 1 code change claimed that a term "-log Z_m" wrongly
+penalized larger counts in independent heads, because count mode
+might be 5.73 while the most probable set has 2.02 selected options.
+
+**That explanation was wrong.** A cardinality distribution assigns
+AGGREGATE probability to all sets of size m, not to each individual
+set. An m=5 count can have the most mass while an individual m=2 set
+still has greater probability. This is mathematically expected.
+
+For a normalized subset law, both count-head variants must decode
+using the same formula:
+
+    argmax_{m in public M} [log rho_m
+                           + sum_{i in Top-m(s)} s_i
+                           - log Z_m(s)].
+
+- Independent Count Head: rho_m = softmax(c)_m. Keep "-log Z_m".
+- Count Anchor: rho_m proportional exp(a_m+log Z_m(s)); after cancellation
+  the MAP objective becomes a_m + sum_{i in Top-m(s)} s_i.
+
+The 2026-11-01 code used the Anchor residual formula for BOTH heads,
+which is incorrect and non-invariant under adding a constant to every
+candidate score in the independent-head model.
+
+**Fix commits, November 2:** set_distillation.py and
+multiselect_metrics.py now both use the common normalized subset law.
+Existing exact-enumeration, count-normalization, option-logit-shift,
+and 100-option regression tests pass in GitHub CI.
+
+## Historical DEV pilot table (do not treat retracted cells as corrected)
+
+| arm | previously reported Set-MAP Micro-F1 | best sigmoid-threshold Micro-F1 | mean selected count under old decoder |
 |---|---:|---:|---:|
-| bce_continue | 0.4286 | **0.5005** (0.35) | 2.66 |
-| bce_goldcount_w100 | 0.2849 | 0.3980 (0.15) | 3.20 |
-| set_ce_independent | 0.4619 | 0.4667 (0.20) | 5.96 |
-| set_ce_anchor | 0.4359 | 0.4703 (0.15) | 3.86 |
-| set_ce_anchor_detach | 0.4699 | 0.4752 (0.25) | 5.33 |
+| bce_continue | 0.4286 | 0.5005 (threshold .35) | 2.66 |
+| bce_goldcount_w100 | **0.2849 (INVALID old Set-MAP)** | 0.3980 (.15) | 3.20 (old decoder) |
+| set_ce_independent | **0.4619 (INVALID old Set-MAP)** | 0.4667 (.20) | 5.96 (old decoder) |
+| set_ce_anchor | 0.4359 (Anchor MAP algebra unaffected) | 0.4703 (.15) | 3.86 |
+| set_ce_anchor_detach | 0.4699 (Anchor MAP algebra unaffected) | 0.4752 (.25) | 5.33 |
 
-Gold mean count is 4.95 (range 1–12).
+Gold average count = 4.95 (range 1..12). All values above are historical
+pilot DEV measurements; no corrected independent/goldcount DEV scores are
+claimed yet. Threshold scores and model candidate logits did not change
+under the standalone decoding patch; the training loss was not modified
+by the November 2 correction.
 
-## Decomposing the gap to calibrated BCE
+**We must rerun the off-line predicted-set decoding before interpreting the
+independent and goldcount Set-MAP results.**
 
-Two distinct effects hold anchor below BCE:
+## No-GPU procedure to correct previously saved DEV predictions
 
-1. **Candidate-score quality (~3pp).** The set objective's candidate term is
-   the set-marginal CE `(q·s)/k`, constrained by the count law, whereas BCE is
-   independent per-option sigmoid CE. On a 100-label task with ~5 positives per
-   document, the independent sigmoid is a better fit: the best threshold decode
-   of the set arms' sigmoid probabilities peaks at ~0.47 vs BCE's 0.5005.
+All gold and saved prediction files must refer to the SAME DEV samples
+and answer-slot order. The helper refuses already-existing output dirs,
+mismatched IDs/prompts/choices, unsupported count probabilities and TEST.
 
-2. **set-MAP hard count constraint (~3.5pp).** set-MAP commits to the top
-   `argmax_m` options; when the count is off (3.86 vs 4.95) it truncates away
-   correct labels. Threshold decoding of the same scores is more flexible and
-   beats set-MAP on every set arm (e.g. anchor 0.470 vs 0.436).
+Example:
 
-## Interpretation
+~~~bash
+python -m paper_static.redecode_set_map \
+  --gold data/eurlex_decision_v1/pilot/dev.jsonl \
+  --predictions runs/paper1_eurlex_pilot_dev_eval/set_ce_independent/seed_43/predictions.jsonl \
+  --output runs/paper1_eurlex_pilot_dev_eval_fixed/set_ce_independent/seed_43
 
-On real EUR-LEX the labels are nearly independent, so the count coupling is a
-burden rather than a benefit: anchor's candidate scores are slightly worse than
-BCE's and its set-MAP count constraint further degrades microF1. This is
-consistent with the synthetic result — anchor wins on cardinality-dependent
-data (K=8/16/32/64), where the count law is real, but not on near-independent
-real multi-label data. The two fixes are important in themselves: the count-head
-underfit and the `-log Z_m` set-MAP bug also affected the earlier independent-arm
-numbers and should be re-audited.
+python -m paper_static.redecode_set_map \
+  --gold data/eurlex_decision_v1/pilot/dev.jsonl \
+  --predictions runs/paper1_eurlex_pilot_dev_eval/bce_goldcount_w100/seed_43/predictions.jsonl \
+  --output runs/paper1_eurlex_pilot_dev_eval_fixed/bce_goldcount_w100/seed_43
+~~~
 
-## Cross-reference
+The tool reads original raw candidate logits and stable per-count log
+probabilities, recomputes exact Set-MAP, and exports corrected
+predictions.jsonl, metrics.json, eurlex_paper_metrics.json and an audit
+manifest. Saved original predictions remain untouched. If the required
+stable log probabilities were not exported by an earlier run, re-evaluate
+the frozen model on DEV; do not invent tiny mass from clipped probabilities.
 
-- `docs/paper1_eurlex_execution.md`: the runbook.
-- `docs/paper1_overview.md`: the three-regime framing and the "when to upgrade"
-  claim.
-- `docs/paper1_e4_k16_results.md`: the synthetic K-scaling result where anchor
-  does beat BCE.
+## What remains genuinely unresolved
+
+The pilot's best calibrated BCE micro-F1 is 0.5005, above Anchor's
+best threshold micro-F1 (0.4703); the full Anchor Set-MAP was 0.4359.
+The real benchmark has not demonstrated a superiority claim.
+
+Next: obtain corrected independent/goldcount DEV metrics; compare
+proper Set NLL and Count NLL across heads and calibrated BCE;
+then run matched seeds and full 55k official training only if
+there is an evidence-supported reason to proceed. A single pilot
+cannot establish conditional independence of EUR-LEX labels.
