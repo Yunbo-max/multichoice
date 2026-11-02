@@ -216,8 +216,14 @@ def main(argv=None):
     result=screen(load_zip(args.archive) if args.archive else load_dir(args.data_dir))
     result["source_kind"]="third_party_zip" if args.archive else "local_bz2_dir"
     result["source_path"]=str(args.archive or args.data_dir)
-    result["source_sha256"]=(hashlib.sha256(args.archive.read_bytes()).hexdigest()
-                              if args.archive else None)
+    if args.archive:
+        source_digest=hashlib.sha256()
+        with args.archive.open("rb") as stream:
+            for chunk in iter(lambda:stream.read(1<<20),b""):
+                source_digest.update(chunk)
+        result["source_sha256"]=source_digest.hexdigest()
+    else:
+        result["source_sha256"]=None
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(result,indent=2,ensure_ascii=False,
                                       allow_nan=False)+"\n",encoding="utf-8")
