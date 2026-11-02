@@ -294,20 +294,19 @@ def prediction_records(rows, predictions, threshold=0.5, decoder="protocol"):
                 prefix = [0.0]
                 for index in order:
                     prefix.append(prefix[-1] + centered[index])
-                # Clipping is an explicitly labeled legacy NLL fallback, never
-                # a way to invent positive mass for MAP decoding.
-                raw_count = record.get("count_residual_logits")
-                if raw_count is not None:
-                    # Exact set MAP: argmax_m [sum_{top-m} s_i + a_m], matching
-                    # structured_prediction. prefix[m] + m*center restores the
-                    # un-centered top-m score sum.
-                    center = max(scores)
-                    map_count = max(sorted(support),
-                                    key=lambda m: (raw_count[m] + prefix[m] + m * center, -m))
-                else:
-                    map_logs = (log_counts if "count_log_probs" in record else
-                                [math.log(p) if p > 0 else -math.inf for p in counts])
-                    map_count = max(sorted(support), key=lambda m: (map_logs[m] + prefix[m] - logz[m], -m))
+                # Validate the exact probability of an individual set:
+                # log P(top_m) = log rho_m + sum_{top_m} (s_i-center)
+                #                 - log Z_m(s-center).
+                # This SAME rule is correct for independent and anchored
+                # count heads. In particular, count_residual_logits means
+                # independent c_m on independent checkpoints, not anchor a_m;
+                # it must never bypass the -log Z_m correction.
+                # Legacy count-probability-only exports cannot restore
+                # underflowed mass; never invent mass for MAP decoding.
+                map_logs = (log_counts if "count_log_probs" in record else
+                            [math.log(p) if p > 0 else -math.inf for p in counts])
+                map_count = max(sorted(support),
+                                key=lambda m: (map_logs[m] + prefix[m] - logz[m], -m))
                 if selected != sorted(order[:map_count]):
                     raise ValueError(f"{ident}: supplied set_map indices do not match the declared structured law")
                 gold_logp = (log_counts[sum(target)]
