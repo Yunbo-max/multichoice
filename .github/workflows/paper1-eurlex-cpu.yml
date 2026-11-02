@@ -51,3 +51,17 @@ jobs:
       - name: Frozen BCE and P2 gate scheduler validation
         run: python -m unittest discover -s tests -p test_paper1_eurlex_study_jobs.py -v
 
+
+  frozen-count-torch-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PyTorch CPU only
+        run: python -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Frozen BCE head, gradients, likelihood and export smoke
+        run: python -m unittest discover -s tests -p test_paper1_eurlex_p0_p1.py -v
+      - name: Original gold Count CE gradient regression
+        run: python -m unittest discover -s tests -p test_paper1_eurlex.py -v
