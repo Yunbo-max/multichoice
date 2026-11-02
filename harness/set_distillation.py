@@ -218,9 +218,11 @@ def structured_prediction(scores, count_logits, row, count_anchor=False, zero_co
     support = allowed_counts(row)
     if zero_count_head:
         count_logits = [0.0] * len(count_logits)
-    # Keep the raw count-head residual a_m for the exact set MAP; the anchored
-    # count law (a_m + log Z_m) is used only for the count distribution rho.
-    raw_count = list(count_logits)
+    # Two count-head semantics share the SAME normalized subset distribution:
+    # independent: log rho_m = c_m - logsumexp(c)
+    # anchored:    log rho_m = a_m + log Z_m(s) - logsumexp(a+log Z(s))
+    # In either case a subset of size m has log probability
+    # log rho_m + sum_{i in S} s_i - log Z_m(s).
     if count_anchor:
         count_logits = count_anchor_logits(scores, count_logits)
     if any(not math.isfinite(count_logits[m]) for m in support):
@@ -235,10 +237,15 @@ def structured_prediction(scores, count_logits, row, count_anchor=False, zero_co
     prefix = [0.0]
     for index in order:
         prefix.append(prefix[-1] + centered[index])
-    # Exact set MAP: argmax_m [ sum_{top-m} s_i + a_m ]. The top-m score sum is
-    # prefix[m] + m*center (centered prefix restored by the shared max shift).
-    # log_rho + prefix - logz over-penalises large m for non-anchored heads.
-    best_m = max(support, key=lambda m: (raw_count[m] + prefix[m] + m * center, -m))
+    # Exact set-MAP for BOTH count-head parameterizations, using the
+    # count-normalized probability of a particular top-m subset (not merely
+    # the probability of selecting count m). Centering s is safe because
+    # the m*center term cancels between top-m score sum and log Z_m.
+    # Anchor identity: log rho_m = a_m + log Z_m(s) - constant; the
+    # same formula reduces to top-m raw-score sum + a_m, up to a constant.
+    # Independent head: retaining -log Z_m is essential; removing it makes
+    # the decoder change when all candidate scores receive a common shift.
+    best_m = max(support, key=lambda m: (log_rho[m] + prefix[m] - logz[m], -m))
     return {
         "p": structured_marginals(centered, rho),
         "count_probs": rho,
