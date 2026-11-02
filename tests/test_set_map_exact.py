@@ -18,6 +18,7 @@ from harness.set_distillation import (
     input_digest,
 )
 from harness.multiselect_metrics import prediction_records
+from paper_static.redecode_set_map import redecode, decode, main as redecode_main
 
 
 def row(k, *, allow_empty=True, mode="multi"):
@@ -164,6 +165,62 @@ class ExactMap(unittest.TestCase):
         invalid=dict(correct,predicted_indices=[0,1])
         with self.assertRaisesRegex(ValueError,"set_map indices"):
             prediction_records([question],[invalid],threshold=.5,decoder="auto")
+
+    def test_saved_dev_reddecode_repairs_old_wrong_pair_selection(self):
+        question = row(4, allow_empty=False)
+        scores = [0.] * 4
+        raw = [-1000., math.log(.45), math.log(.55), -1000., -1000.]
+        old = structured_prediction(scores, raw, question, count_anchor=False)
+        old.update(id=question["id"], candidate_logits=scores,
+                   count_residual_logits=raw,
+                   option_keys=[o["key"] for o in question["options"]],
+                   input_digest=input_digest(question))
+        old["predicted_indices"] = [0, 1]  # The historical wrong Count-Mode result.
+        new, summary = redecode([question], [old])
+        self.assertEqual(summary["changed_questions"], 1)
+        self.assertEqual(len(new[0]["predicted_indices"]), 1)
+        self.assertEqual(new[0]["count_probs"], old["count_probs"])
+        self.assertEqual(new[0]["p"], old["p"])
+        self.assertEqual(new[0]["candidate_logits"], old["candidate_logits"])
+        prediction_records([question], new, decoder="auto")
+        with self.assertRaisesRegex(ValueError, "DEV-only"):
+            redecode([dict(question, split="test")], [old])
+        with self.assertRaisesRegex(ValueError, "IDs do not match"):
+            redecode([question], [dict(old, id="different-id")])
+
+    def test_saved_dev_reddecode_cli_preserves_source_and_refuses_overwrite(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        question = row(4, allow_empty=False)
+        scores = [0.] * 4
+        raw = [-1000., math.log(.45), math.log(.55), -1000., -1000.]
+        old = structured_prediction(scores, raw, question, count_anchor=False)
+        old.update(id=question["id"], candidate_logits=scores,
+                   count_residual_logits=raw,
+                   option_keys=[o["key"] for o in question["options"]],
+                   input_digest=input_digest(question))
+        old["predicted_indices"] = [0,1]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gold = root / "dev.jsonl"
+            pred = root / "original_predictions.jsonl"
+            output = root / "rescored"
+            gold.write_text(json.dumps(question) + "\n", encoding="utf-8")
+            pred.write_text(json.dumps(old) + "\n", encoding="utf-8")
+            redecode_main(["--gold", str(gold),
+                           "--predictions", str(pred), "--output", str(output)])
+            self.assertTrue((output / "predictions.jsonl").exists())
+            self.assertTrue((output / "metrics.json").exists())
+            manifest = json.loads((output / "redecode_manifest.json").read_text())
+            self.assertEqual(manifest["status"], "DEV_REDECODED_FROM_SAVED_PREDICTIONS_NO_GPU")
+            self.assertEqual(manifest["changed_questions"], 1)
+            preserved = json.loads(pred.read_text())
+            self.assertEqual(preserved["predicted_indices"], [0,1])
+            with self.assertRaises(SystemExit):
+                redecode_main(["--gold", str(gold),
+                               "--predictions", str(pred), "--output", str(output)])
 
     def test_auditor_accepts_anchor_with_raw_residual(self):
         question=row(5, allow_empty=True)
