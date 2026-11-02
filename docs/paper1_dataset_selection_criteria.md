@@ -1,3 +1,7 @@
+> **Real-dataset source check, 2026-11-02:** See [verified RoMQA (constraint-based QA), SWE-rebench V2 (Coding), LeanDojo (Maths), QAMPARI and FEVEROUS shortlist](paper1_benchmark_hunt_20261102.md), plus [RoMQA official train/DEV ZIP cardinality auditor](../paper_static/romqa_data_screen.py). Original data files have not yet been downloaded or audited in this workspace; NO measured new positive Count Gap.
+>
+> **Scientific qualification:** A positive learned-count versus BCE Poisson-binomial Count NLL gap is a pre-screen, not proof of mathematically "orthogonal" information or Anchor superiority. Anchor must also beat a TRAIN-count-prior initialized independent head and public known-count Top-k where applicable. A fixed-count question with count explicitly given cannot by itself demonstrate a learned Anchor benefit.
+
 # Paper 1 — When does Cardinality/Anchor modeling help? Dataset selection criteria
 
 **Date:** 2026-11-02. Branch: research/static-setjev-paper-20261027.
