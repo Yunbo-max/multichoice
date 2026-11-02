@@ -48,9 +48,13 @@ P1b: **Causal frozen-score control**, the cleanest count-head experiment:
    Count NLL, proper Gold-Set NLL, calibrated macro/micro F1, count
    MAE, and candidate-oracle rank ceiling. No gradient enters Qwen4B.
 
-The learned count head c and anchor a share expressive power:
+For unrestricted count-head functions the probability families coincide:
     c_m(x)=a_m(x)+log Z_m(s_BCE(x)).
-A positive result is optimization/calibration, NOT representational novelty.
+With fixed LINEAR heads on h(x), the log Z_m term is generally nonlinear in
+h(x), so this is an inductive-bias/representation and optimization comparison,
+not a proof that the two linear head architectures are expressively equivalent.
+A positive result is improved practical cardinality calibration/inductive bias,
+NOT a new general family of set distributions.
 
 P2: A 55k full official training plan with 3 matched seeds may be
 generated **only if** P0/P1 strong BCE + learned-count controls show
