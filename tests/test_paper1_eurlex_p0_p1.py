@@ -131,7 +131,7 @@ class FrozenActualTorch(unittest.TestCase):
             "data_sha256":"b"*64}
         self.assertTrue(verify_cache(cache,rows,split="train",data_sha="b"*64))
         bad=dict(cache,ids=[*cache["ids"][:2],"wrong"])
-        with self.assertRaisesRegex(ValueError,"different"):
+        with self.assertRaisesRegex(ValueError,"differ"):
             verify_cache(bad,rows,split="train",data_sha="b"*64)
 
     def test_count_heads_share_frozen_logits_and_reduce_dev_count_nll(self):
