@@ -12,6 +12,7 @@ on:
       - harness/set_distillation.py
       - harness/multiselect_metrics.py
       - tests/test_set_map_exact.py
+      - paper_static/redecode_set_map.py
       - tests/test_set_distillation.py
       - tests/test_multiselect_data_eval.py
       - harness/train_multiselect.py
@@ -27,7 +28,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Static syntax verification
-        run: python -m py_compile paper_static/eurlex_data.py qz/make_eurlex_payloads.py qz/make_eurlex_eval_payloads.py harness/set_distillation.py harness/multiselect_metrics.py harness/train_multiselect.py tests/test_set_map_exact.py tests/test_set_distillation.py tests/test_multiselect_data_eval.py paper_static/eurlex_metrics.py tests/test_paper1_eurlex.py tests/test_paper1_eurlex_metrics.py
+        run: python -m py_compile paper_static/eurlex_data.py qz/make_eurlex_payloads.py qz/make_eurlex_eval_payloads.py harness/set_distillation.py harness/multiselect_metrics.py harness/train_multiselect.py paper_static/redecode_set_map.py tests/test_set_map_exact.py tests/test_set_distillation.py tests/test_multiselect_data_eval.py paper_static/eurlex_metrics.py tests/test_paper1_eurlex.py tests/test_paper1_eurlex_metrics.py
       - name: Offline dataset, prompt and job regressions
         run: python -m unittest discover -s tests -p test_paper1_eurlex.py -v
       - name: Offline EUR-LEX F1 and proper joint NLL checks
