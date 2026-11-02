@@ -13,6 +13,13 @@ on:
       - harness/multiselect_metrics.py
       - tests/test_set_map_exact.py
       - paper_static/redecode_set_map.py
+      - paper_static/eurlex_p0_diagnostics.py
+      - paper_static/eurlex_frozen_count.py
+      - paper_static/eurlex_study_plan.py
+      - paper_static/eurlex_frozen_head_jobs.py
+      - qz/make_eurlex_frozen_cache_payloads.py
+      - tests/test_paper1_eurlex_p0_p1.py
+      - tests/test_paper1_eurlex_study_jobs.py
       - tests/test_set_distillation.py
       - tests/test_multiselect_data_eval.py
       - harness/train_multiselect.py
@@ -28,7 +35,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Static syntax verification
-        run: python -m py_compile paper_static/eurlex_data.py qz/make_eurlex_payloads.py qz/make_eurlex_eval_payloads.py harness/set_distillation.py harness/multiselect_metrics.py harness/train_multiselect.py paper_static/redecode_set_map.py tests/test_set_map_exact.py tests/test_set_distillation.py tests/test_multiselect_data_eval.py paper_static/eurlex_metrics.py tests/test_paper1_eurlex.py tests/test_paper1_eurlex_metrics.py
+        run: python -m py_compile paper_static/eurlex_data.py qz/make_eurlex_payloads.py qz/make_eurlex_eval_payloads.py harness/set_distillation.py harness/multiselect_metrics.py harness/train_multiselect.py paper_static/redecode_set_map.py paper_static/eurlex_p0_diagnostics.py paper_static/eurlex_frozen_count.py paper_static/eurlex_study_plan.py paper_static/eurlex_frozen_head_jobs.py qz/make_eurlex_frozen_cache_payloads.py tests/test_paper1_eurlex_p0_p1.py tests/test_paper1_eurlex_study_jobs.py tests/test_set_map_exact.py tests/test_set_distillation.py tests/test_multiselect_data_eval.py paper_static/eurlex_metrics.py tests/test_paper1_eurlex.py tests/test_paper1_eurlex_metrics.py
       - name: Offline dataset, prompt and job regressions
         run: python -m unittest discover -s tests -p test_paper1_eurlex.py -v
       - name: Offline EUR-LEX F1 and proper joint NLL checks
@@ -39,3 +46,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_set_distillation.py -v
       - name: Existing saved-prediction scorer and no-leakage controls
         run: python -m unittest discover -s tests -p test_multiselect_data_eval.py -v
+      - name: Offline P0 proper NLL and decoder comparisons
+        run: python -m unittest discover -s tests -p test_paper1_eurlex_p0_p1.py -v
+      - name: Frozen BCE and P2 gate scheduler validation
+        run: python -m unittest discover -s tests -p test_paper1_eurlex_study_jobs.py -v
+
