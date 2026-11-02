@@ -99,12 +99,29 @@ the frozen model on DEV; do not invent tiny mass from clipped probabilities.
 
 ## What remains genuinely unresolved
 
+Corrected seed-43 DEV Set-MAP after off-line redecoding
+(`paper_static/redecode_set_map.py`, `runs/paper1_eurlex_pilot_dev_eval_fixed/`):
+
+| arm | corrected Set-MAP micro-F1 | mean selected count |
+|---|---:|---:|
+| bce_continue | 0.4286 | 2.66 |
+| bce_goldcount_w100 | 0.2124 | 2.02 |
+| set_ce_independent | 0.4441 | 4.82 |
+| set_ce_anchor | 0.4359 | 3.86 |
+| set_ce_anchor_detach | 0.4699 | 5.33 |
+
+Gold average count = 4.95. The corrected independent-head count (4.82) now
+lands near gold, but the independent/goldcount Set-MAP micro-F1 is lower than
+the previously reported (invalid) values, as expected from the normalized
+subset law. The corrected ranking is: detach > independent > anchor >
+bce_continue > goldcount on Set-MAP micro-F1, while calibrated BCE (0.5005)
+remains above every set arm.
+
 The pilot's best calibrated BCE micro-F1 is 0.5005, above Anchor's
 best threshold micro-F1 (0.4703); the full Anchor Set-MAP was 0.4359.
 The real benchmark has not demonstrated a superiority claim.
 
-Next: obtain corrected independent/goldcount DEV metrics; compare
-proper Set NLL and Count NLL across heads and calibrated BCE;
-then run matched seeds and full 55k official training only if
-there is an evidence-supported reason to proceed. A single pilot
-cannot establish conditional independence of EUR-LEX labels.
+Next: compare proper Set NLL and Count NLL across heads and calibrated BCE;
+then run matched seeds and full 55k official training only if there is an
+evidence-supported reason to proceed. A single pilot cannot establish
+conditional independence of EUR-LEX labels.
