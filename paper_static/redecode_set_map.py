@@ -128,7 +128,7 @@ def main(argv=None):
         p.error("output exists: refusing to overwrite prior inference")
     rows=read_dataset(args.gold,expected_split="dev")
     original=read_jsonl(args.predictions)
-    corrected,change=reddecode=reddecode_placeholder() if False else redecode(rows,original)
+    corrected,change=redecode(rows,original)
     report=compute_metrics(rows,corrected,threshold=.5,decoder="auto")
     summary={
         "status":"DEV_REDECODED_FROM_SAVED_PREDICTIONS_NO_GPU",
