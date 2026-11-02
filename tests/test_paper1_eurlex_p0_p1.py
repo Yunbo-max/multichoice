@@ -199,6 +199,74 @@ class FrozenActualTorch(unittest.TestCase):
                                     torch.load(paths["dev"][1],weights_only=True)["scores"][0].tolist()])
                 self.assertIn("count_probs",preds[0])
 
+    def test_anchor_vs_independent_inductive_bias_separation(self):
+        # Fixed LINEAR heads on frozen h: log Z_m(s) is nonlinear in h, so the
+        # two restricted architectures are NOT expressively equivalent.
+        # Scenario A: true count law = A h + log Z_m(s)  -> anchor must win.
+        # Scenario B: true count law = C h (score-independent) -> independent wins.
+        from paper_static.eurlex_frozen_count import train, digest
+        torch.manual_seed(7)
+        torch.set_num_threads(4)
+        D, K = 64, 100
+        W_label = torch.randn(K, D)
+        A = torch.randn(K + 1, D) * 0.4
+        C = torch.randn(K + 1, D) * 0.4
+
+        def build(split, n, scenario):
+            rows, feats, scores, logs, counts = [], [], [], [], []
+            for i in range(n):
+                h = torch.randn(D) * 0.5
+                s = W_label @ h + 0.1 * torch.randn(K)
+                logz = torch.tensor(centered_count_logz(s.tolist()),
+                                    dtype=torch.float32)
+                true = (A @ h + logz) if scenario == "A" else (C @ h)
+                p = torch.softmax(true, dim=0)
+                m = int(torch.multinomial(p, 1).item())
+                order = torch.argsort(s, descending=True)
+                rows.append(row(i, split, order[:m].tolist()))
+                feats.append(h); scores.append(s); logs.append(logz); counts.append(m)
+            cache = {
+                "schema": "eurlex_frozen_bce_features_v1", "split": split,
+                "checkpoint_identity": "/synth/frozen/qwen",
+                "model_config_sha256": "a" * 64, "label_token_ids": list(range(K)),
+                "ids": [r["id"] for r in rows],
+                "input_digests": [input_digest(r) for r in rows],
+                "label_counts": counts,
+                "hidden": torch.stack(feats), "scores": torch.stack(scores),
+                "logz": torch.stack(logs),
+            }
+            return rows, cache
+
+        def run_scenario(root, scenario):
+            root.mkdir(parents=True, exist_ok=True)
+            tr, tc = build("train", 400, scenario)
+            dr, dc = build("dev", 100, scenario)
+            tg = root / "train.jsonl"; dg = root / "dev.jsonl"
+            tg.write_text("".join(json.dumps(r) + "\n" for r in tr))
+            dg.write_text("".join(json.dumps(r) + "\n" for r in dr))
+            tc["data_sha256"] = digest(tg); dc["data_sha256"] = digest(dg)
+            tf = root / "train.pt"; df = root / "dev.pt"
+            torch.save(tc, tf); torch.save(dc, df)
+            nll = {}
+            for mode in ("anchor", "independent"):
+                head = root / f"head_{mode}"
+                train(Namespace(train_gold=tg, dev_gold=dg, train_cache=tf,
+                                dev_cache=df, mode=mode, init="zero", seed=43,
+                                steps=100, batch=64, eval_every=50, lr=0.01,
+                                device="cpu", output=head))
+                summary = json.loads((head / "training_summary.json").read_text())
+                nll[mode] = summary["best_dev_count_nll"]
+            return nll
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ra = run_scenario(root / "A", "A")
+            rb = run_scenario(root / "B", "B")
+        self.assertLess(ra["anchor"], ra["independent"],
+                        "scenario A (count~log Z_m) must favor anchor")
+        self.assertLess(rb["independent"], rb["anchor"],
+                        "scenario B (score-independent count) must favor independent")
+
 
 if __name__=="__main__":
     unittest.main()

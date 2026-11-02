@@ -148,11 +148,16 @@ python -m paper_static.eurlex_frozen_head_jobs \
   --seed 43 44 45 \
   --lr 0.001 0.0003 \
   --steps 600 --batch 64 \
+  --threads 4 \
   --python "$R/.venv-sii/bin/python"
 
 # After cache files exist and match both Gold SHA256 values:
 bash "$R/qz_eurlex_frozen_heads_v1/run_cpu_heads.sh"
 ~~~
+
+The generated `run_cpu_heads.sh` sets `OMP_NUM_THREADS` (default 4). The
+100-way linear count head is tiny; default 64-thread oversubscription slows
+CPU training by three orders of magnitude in some builds. Keep threads low.
 
 This produces DEV predictions for:
 - anchor/zero init;

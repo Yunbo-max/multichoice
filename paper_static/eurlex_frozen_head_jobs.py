@@ -17,7 +17,7 @@ import shlex
 def create_plan(*,train_cache,dev_cache,train_gold,dev_gold,
                 output_root, seeds=(43,44,45),
                 rates=(0.001,0.0003),steps=600,batch=64,
-                python="python",init_prior=True):
+                python="python",init_prior=True,threads=4):
     for path in (train_cache,dev_cache,train_gold,dev_gold,output_root):
         if not Path(path).is_absolute():
             raise ValueError("all cache/data/output paths must be absolute for QZ reproducibility")
@@ -69,6 +69,8 @@ def main(argv=None):
     p.add_argument("--batch",type=int,default=64)
     p.add_argument("--python",default="python")
     p.add_argument("--without-prior-control",action="store_true")
+    p.add_argument("--threads",type=int,default=4,
+                   help="OMP_NUM_THREADS for CPU-only head training; avoids oversubscription")
     args=p.parse_args(argv)
     if args.plan_dir.exists():
         p.error("plan directory exists")
@@ -76,11 +78,12 @@ def main(argv=None):
         train_gold=args.train_gold,dev_gold=args.dev_gold,
         output_root=args.output_root,seeds=tuple(args.seed),rates=tuple(args.lr),
         steps=args.steps,batch=args.batch,python=args.python,
-        init_prior=not args.without_prior_control)
+        init_prior=not args.without_prior_control,threads=args.threads)
     args.plan_dir.mkdir(parents=True)
     (args.plan_dir/"manifest.json").write_text(json.dumps(result,indent=2)+"\n")
     (args.plan_dir/"run_cpu_heads.sh").write_text(
         "#!/usr/bin/env bash\nset -euo pipefail\n"
+        + "export OMP_NUM_THREADS=" + str(args.threads) + "\n"
         + "".join(
           "\ntest ! -e "+shlex.quote(j["head"])+"\n"
           + "test ! -e "+shlex.quote(j["predictions"])+"\n"
