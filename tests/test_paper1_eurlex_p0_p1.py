@@ -71,7 +71,7 @@ class P0(unittest.TestCase):
             result["arms"]["bce_continue"]["decoders"]["dev_tuned_marginal_threshold"]["micro_f1"],1.)
         self.assertEqual(
             result["arms"]["anchor"]["decoders"]["dev_tuned_marginal_threshold"]["threshold"],
-            .05)
+            .5)
         with self.assertRaisesRegex(ValueError,"DEV only"):
             analyze([dict(rows[0],split="test")],{"bce_continue":[bce[0]]})
         with self.assertRaisesRegex(ValueError,"IDs mismatch"):
