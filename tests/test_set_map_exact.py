@@ -129,6 +129,25 @@ class ExactMap(unittest.TestCase):
                                         question, count_anchor=True)
         self.assertEqual(shifted["predicted_indices"], [0,1,2,3])
 
+    def test_exact_anchor_reparameterization_matches_independent_head(self):
+        # The anchor head (a) and independent count head (c=a+logZ_m(s))
+        # represent the same probability distribution; their set-MAP
+        # results must therefore agree exactly. This also detects the
+        # Nov-1 bug that treated an independent c as an anchor a.
+        scores = [-1.3, .2, 1.1, -0.7, .8]
+        residual = [1.0, -.8, .3, 1.1, -.5, .7]
+        independent = count_anchor_logits(scores, residual)
+        question = row(5, allow_empty=True)
+        a = structured_prediction(scores, residual, question, count_anchor=True)
+        b = structured_prediction(scores, independent, question, count_anchor=False)
+        self.assertEqual(a["predicted_indices"], b["predicted_indices"])
+        self.assertAlmostEqual(a["predicted_set_log_probability"],
+                               b["predicted_set_log_probability"], places=10)
+        for x, y in zip(a["count_probs"], b["count_probs"]):
+            self.assertAlmostEqual(x, y, places=10)
+        for x, y in zip(a["p"], b["p"]):
+            self.assertAlmostEqual(x, y, places=10)
+
     def test_large_K_independent_head_exact_count_without_exponential_search(self):
         k = 100
         question = row(k, allow_empty=True)
