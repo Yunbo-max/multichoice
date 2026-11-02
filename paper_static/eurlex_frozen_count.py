@@ -14,9 +14,12 @@ full shifted log Z_m). Train the two matched linear heads on the SAME inputs,
 gold counts, update budget, and (seed-specific) shuffled batches. Head loss:
   anchor:      CE(m, softmax(W h+b + log Z_m(s_BCE)))
   independent: CE(m, softmax(W h+b))
-These heads are expressively equivalent up to an x-dependent residual
-reparameterization; this experiment tests optimization and calibration,
-NOT increased probability-family expressivity. P1 never touches TEST.
+At the unrestricted probability-family level, both count laws admit
+reparameterization c_m(x)=a_m(x)+log Z_m(s_BCE(x)). With LINEAR heads
+on a frozen h(x), log Z_m(s_BCE(x)) is generally NOT linear in h, so
+the actual restricted architectures have different inductive biases.
+The comparison tests this prior, optimization and calibration; it does NOT
+establish a new unrestricted probability family. P1 never touches TEST.
 
 Requires installed torch for training and a local Qwen3.5 checkpoint for
 extract. Export and readout can use CPU or GPU. Torch-only operations import
