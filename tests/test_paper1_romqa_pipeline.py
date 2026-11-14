@@ -105,8 +105,9 @@ class Converter(unittest.TestCase):
         self.assertLess(meta["evidence_chars_used"],500)
         self.assertEqual([o["key"] for o in row2["options"]],
                          [o["key"] for o in baseline["options"]])
+        too_long={**row,"question":row["question"] + (" X"*800)}
         with self.assertRaisesRegex(ValueError,"exceed budget"):
-            fit_prompt(row,e,tok,LABELS,max_input_tokens=512,evidence_chars=0)
+            fit_prompt(too_long,e,tok,LABELS,max_input_tokens=512,evidence_chars=0)
 
     def test_dpr_is_deterministic_not_gold_based(self):
         c={"text":"x","is_answer":True,"dpr":["a","b"],"dpr_score":[.4,.9]}
