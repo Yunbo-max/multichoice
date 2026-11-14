@@ -1,0 +1,28 @@
+name: Paper 1 RoMQA schema, frozen-count and DEV offline checks
+on:
+  push:
+    branches:
+      - research/romqa-anchor-icml2027-20261114
+    paths:
+      - paper_static/romqa_*.py
+      - tests/test_paper1_romqa_*.py
+      - .github/workflows/paper1-romqa-cpu.yml
+  workflow_dispatch:
+jobs:
+  romqa-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Strict Python syntax checks (no model or data download)
+        run: |
+          python -m py_compile paper_static/romqa_data.py paper_static/romqa_data_screen.py paper_static/romqa_metrics.py paper_static/romqa_compare.py paper_static/romqa_frozen.py paper_static/romqa_plan.py tests/test_paper1_romqa_pipeline.py
+      - name: Official RoMQA Train/DEV ZIP auditor fixture tests
+        run: python -m unittest discover -s tests -p 'test_paper1_romqa_screen.py' -v
+      - name: Multi-select conversion, proper Count/Set metrics, no Test and cluster contracts
+        run: python -m unittest discover -s tests -p 'test_paper1_romqa_pipeline.py' -v
+      - name: Existing exact cardinality Set-MAP regression
+        run: python -m unittest discover -s tests -p 'test_set_map_exact.py' -v
