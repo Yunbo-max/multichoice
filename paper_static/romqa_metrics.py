@@ -188,6 +188,14 @@ def score(rows, predictions, *, full_answers, threshold=.5,
     # candidate gold rows for its average SetF1. It retains empty-gold rows
     # for per-cluster minima. Keep the separate selection denominators visible.
     official_nonempty=[p for p in official if p["nonempty_candidate_gold"]]
+    checkpoints={p.get("checkpoint_id") for p in predictions if p.get("checkpoint_id")}
+    if len(checkpoints)>1:
+        raise ValueError("mixed checkpoint identities in one RoMQA prediction report")
+    frozen_models={p.get("provenance",{}).get("model") for p in predictions
+                   if isinstance(p.get("provenance"),dict)
+                   and p["provenance"].get("frozen_candidate_scores")}
+    if len(frozen_models)>1:
+        raise ValueError("frozen feature base model changed within one report")
     report={
         "status":"ROMQA_DEV_OFFLINE_SCORED",
         "n":len(per),"n_clusters":len(groups),
@@ -216,6 +224,8 @@ def score(rows, predictions, *, full_answers, threshold=.5,
         "threshold":threshold,"decode_mode":decoder,
         "proper_log_likelihood":"full candidate-set distribution; no Gold count supplied",
         "test_read":False,
+        "checkpoint_id":next(iter(checkpoints)) if checkpoints else None,
+        "frozen_bce_checkpoint":next(iter(frozen_models)) if frozen_models else None,
     }
     return report,per
 
