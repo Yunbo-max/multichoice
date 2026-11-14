@@ -315,6 +315,16 @@ def prepare(output, splits, tokenizer, labels, *, expected_k=100,
                         "n":len(selected),
                         "clusters":len({r["group_id"] for r in selected}),
                     }
+                    # Keep complete-answer metadata OUT of model input. DEV
+                    # pilot scorer needs exactly the selected DEV IDs, not
+                    # the unrelated full DEV sidecar (which would not align).
+                    by_id={g["id"]:g for g in sidecars[split]}
+                    eval_file=output/"pilot"/f"{split}_complete_answers.jsonl"
+                    _jsonl(eval_file,[by_id[r["id"]] for r in selected])
+                    manifest["pilot"][split].update({
+                        "eval_sidecar":str(eval_file.relative_to(output)),
+                        "eval_sha256":digest_file(eval_file),
+                    })
         (output/"manifest.json").write_text(
             json.dumps(manifest,ensure_ascii=False,indent=2,allow_nan=False)+"\n",
             encoding="utf-8")
