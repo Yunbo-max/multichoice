@@ -24,6 +24,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_paper1_romqa_screen.py' -v
       - name: Multi-select conversion, proper Count/Set metrics, no Test and cluster contracts
         run: python -m unittest discover -s tests -p 'test_paper1_romqa_pipeline.py' -v
+      - name: RoMQA stage-only command matrix and immutable SHA checks
+        run: python -m unittest discover -s tests -p 'test_paper1_romqa_plan.py' -v
       - name: Existing exact cardinality Set-MAP regression
         run: python -m unittest discover -s tests -p 'test_set_map_exact.py' -v
 
