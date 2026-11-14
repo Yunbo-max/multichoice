@@ -72,7 +72,7 @@ class StageOnly(unittest.TestCase):
             self.assertIn("--init prior",scripts)
             self.assertNotIn("test.jsonl",scripts)
             self.assertNotIn("rm -rf",scripts)
-            with self.assertRaisesRegex(ValueError,"already"):
+            with self.assertRaisesRegex(ValueError,"output exists"):
                 stage(manifest=dat/"manifest.json",data=dat,repo=repo,
                       base_model=model,modules=modules,
                       run_root=root,output=output,pilot=True)
