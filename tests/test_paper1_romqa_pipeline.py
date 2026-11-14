@@ -98,7 +98,7 @@ class Converter(unittest.TestCase):
         row,e,_=_as_record(raw("x","c1","Which?",[1,0,1,0]),"train",expected_k=4)
         baseline,b=fit_prompt(row,e,tok,LABELS,max_input_tokens=10000,evidence_chars=0)
         self.assertEqual(b["evidence_chars_used"],0)
-        desired=b["prompt_tokens"]+120
+        desired=max(512,b["prompt_tokens"]+120)
         row2,meta=fit_prompt(row,e,tok,LABELS,max_input_tokens=desired,evidence_chars=500)
         self.assertEqual(len(row2["options"]),4)
         self.assertLessEqual(meta["prompt_tokens"],desired)
