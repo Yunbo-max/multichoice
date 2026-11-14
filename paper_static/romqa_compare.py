@@ -45,6 +45,19 @@ def paired(results, *, bootstrap=1000, seed=43):
     if set(results)!=set(ROLES):
         raise ValueError("require BCE, Anchor and TRAIN-prior independent roles")
     bce_report,bce=results["bce"]
+    base_id=bce_report.get("frozen_bce_checkpoint")
+    if base_id is not None:
+        # For the actual frozen controls, comparing an Anchor head trained
+        # on a different BCE base is a hard scientific protocol violation.
+        expected={
+            "bce":"|frozen|bce|",
+            "anchor":"|frozen|anchor|zero|",
+            "prior":"|frozen|independent|prior|",
+        }
+        for name,(report,_) in results.items():
+            if (report.get("frozen_bce_checkpoint")!=base_id or
+                expected[name] not in (report.get("checkpoint_id") or "")):
+                raise ValueError(f"{name}: not the same frozen BCE or missing TRAIN-prior control")
     others={}
     for name in ("anchor","prior"):
         meta,rows=results[name]
