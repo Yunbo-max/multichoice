@@ -31,7 +31,7 @@ def raw(ident,cluster,question,labels,complete=None,missing_dpr=False):
     candidates=[{
         "text":name,"is_answer":bool(y),
         "dpr":[] if missing_dpr else [
-            f"Public biographical passage about {name}: {"x"*500}"],
+            f"Public biographical passage about {name}: {'x'*500}"],
         "dpr_score":[] if missing_dpr else [.92],
     } for name,y in zip(names,labels)]
     if complete is None:complete=[names[i] for i,b in enumerate(labels) if b]
@@ -190,7 +190,7 @@ class Scorer(unittest.TestCase):
 
     def test_no_silent_prediction_drop_or_sidecar_swap(self):
         predictions=predict_bce(self.rows)
-        with self.assertRaisesRegex(ValueError,"predictions IDs mismatch"):
+        with self.assertRaisesRegex(ValueError,"prediction IDs mismatch"):
             score(self.rows,predictions[:-1],full_answers=self.full,bootstrap=0)
         bad=[dict(x) for x in self.full]
         bad[0]["candidate_gold"]=["Unknown"]
