@@ -37,7 +37,7 @@ class StageOnly(unittest.TestCase):
                      "dev":[sample("c","dev1"),sample("d","dev2")]},
                 Tokenizer(),list("ABCD"),expected_k=4,
                 evidence_chars=32,max_input_tokens=2048,
-                pilot_train_clusters=1,pilot_dev_clusters=1,
+                pilot_train_clusters=2,pilot_dev_clusters=2,
                 provenance={"kind":"fixture","sha256":"z"*64},
             )
             repo=p/"repo"
@@ -81,8 +81,8 @@ class StageOnly(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             p=Path(tmp)
             data=p/"data"
-            prepare(data,{"train":[sample("a","train")],
-                          "dev":[sample("b","dev")]},
+            prepare(data,{"train":[sample("a","train1"),sample("aa","train2")],
+                          "dev":[sample("b","dev1"),sample("bb","dev2")]},
                     Tokenizer(),list("ABCD"),expected_k=4,
                     evidence_chars=0,max_input_tokens=2048,
                     provenance={"kind":"fixture"},
