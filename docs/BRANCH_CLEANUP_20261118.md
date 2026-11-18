@@ -1,3 +1,5 @@
+> **Cleanup actions completed (2026-11-18):** PRs #1–#8 were commented and **closed without merge**; PRs [#9](https://github.com/Yunbo-max/multichoice/pull/9) and [#10](https://github.com/Yunbo-max/multichoice/pull/10) now both target `main`. GitHub verification: **2 open PRs, 13 branches**. The nine obsolete branch REFS **have NOT been deleted** because the available GitHub connector exposes create/move-ref but no delete-ref action. This is deliberately not reported as a completed remote branch cleanup. [Exact SHA-audited pruning script](../scripts/prune_obsolete_research_branches.py) is available for an authenticated clone. Run its dry-run first. After explicit deletion via the script or GitHub UI, verify 4 remaining remote branches.
+
 # multichoice branch cleanup — audited 2026-11-18
 
 ## Goal and safety
