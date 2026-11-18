@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safely prune precisely nine audited intermediate research refs.
+"""Safely prune precisely ten audited superseded research refs.
 
 DRY RUN by default; requires --delete and typed interactive confirmation for
 real remote ref deletions. GitHub app in this chat does not expose delete-ref.
@@ -20,28 +20,29 @@ import sys
 KEEP = (
     "main",
     "research/static-setjev-paper-20261027",
-    "research/romqa-anchor-icml2027-20261114",
     "research/episodic-tree-sokoban-20261027",
 )
 OLD = (
     ("codex/multiteacher-set-distillation",
-     "c77214b5c930140f4767cffea6deee83cf2f842f", KEEP[2]),
+     "c77214b5c930140f4767cffea6deee83cf2f842f", KEEP[1]),
+    ("research/romqa-anchor-icml2027-20261114",
+     "d6fd50a99b8f03cb84fd9e617d0356512ba19244", KEEP[1]),
     ("research/recurrent-set-decision-20261024",
-     "07d152b12018e3cc92deea577e80e18af255c82c", KEEP[3]),
+     "07d152b12018e3cc92deea577e80e18af255c82c", KEEP[2]),
     ("research/recurrent-set-debug-20261024",
-     "735bc69b83414e12ba80407d2ddd0865a17ca2f2", KEEP[3]),
+     "735bc69b83414e12ba80407d2ddd0865a17ca2f2", KEEP[2]),
     ("research/episodic-set-memory-20261024",
-     "823ec93ca6ed3366a7f2ab71ec125031e7a80a3a", KEEP[3]),
+     "823ec93ca6ed3366a7f2ab71ec125031e7a80a3a", KEEP[2]),
     ("research/episodic-set-debug-20261025",
-     "c34ef0982f5eecf8c02400a18813a9d76f46d6f7", KEEP[3]),
+     "c34ef0982f5eecf8c02400a18813a9d76f46d6f7", KEEP[2]),
     ("research/episodic-identifiability-debug-20261025",
-     "aa793886851dc46c2b542f03c3a4a39e966c02cd", KEEP[3]),
+     "aa793886851dc46c2b542f03c3a4a39e966c02cd", KEEP[2]),
     ("research/episodic-probe-group-split-20261025",
-     "d8e56f03c302d248cd625766f61290b706a92757", KEEP[3]),
+     "d8e56f03c302d248cd625766f61290b706a92757", KEEP[2]),
     ("research/episodic-action-source-diagnostic-20261025",
-     "8fcbc13bf0156f9e8eb19406275ce42f40798735", KEEP[3]),
+     "8fcbc13bf0156f9e8eb19406275ce42f40798735", KEEP[2]),
     ("research/episodic-lora-reliability-20261026",
-     "e3923206fa59c79d720fe9cabf569eaabcdfc4a3", KEEP[3]),
+     "e3923206fa59c79d720fe9cabf569eaabcdfc4a3", KEEP[2]),
 )
 
 
@@ -101,7 +102,7 @@ def main(argv=None):
     if not args.delete:
         print("DRY RUN. No refs deleted. Use --delete only after reviewing.")
         return 0
-    if input("Type DELETE 9 BRANCHES to confirm: ") != "DELETE 9 BRANCHES":
+    if input("Type DELETE 10 BRANCHES to confirm: ") != "DELETE 10 BRANCHES":
         print("No changes.")
         return 1
     for old, sha, parent in OLD:
@@ -116,7 +117,7 @@ def main(argv=None):
         raise RuntimeError("Not all obsolete remote refs were removed")
     if any(name not in remaining for name in KEEP):
         raise RuntimeError("A retained branch is unexpectedly missing")
-    print("Verified 9 obsolete refs removed; all 4 retained refs still live.")
+    print("Verified 10 obsolete refs removed; all 3 retained refs still live.")
     return 0
 
 
