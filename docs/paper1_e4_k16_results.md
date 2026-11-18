@@ -1,3 +1,5 @@
+> **ARCHIVED EXPLORATORY NUMBERS — NOT A VALID ICML BASELINE / MAIN RESULT (2026-11-18).** The K=16/32/64 generator printed a constant collective-pressure cue despite varying the underlying count residual; its Gumbel Top-k subset sampler did not match the specified conditional subset distribution; K-scale runs also used differing update/batch budgets. These numbers require corrected generation, exact conditional sampling, identical comparators and reruns. Do not cite them as a proven monotonic Count Anchor scaling law or use them to claim a research gap. The verified K=8 Controlled-C result belongs to a separate generator/protocol.
+
 # Paper 1 — E4 K=16/32/64: anchor's cardinality advantage grows with K
 
 Branch: `research/static-setjev-paper-20261027`. Date: 2026-10-30.
