@@ -43,9 +43,9 @@ remote head for a **force-free lease/snapshot check** before deletion.
 
 **Do not delete an old ref if it moved after this inventory.** The audit
 provides a dry-run, SHA-frozen local removal script:
-`scripts/prune_obsolete_research_branches.sh`.
+`scripts/prune_obsolete_research_branches.py`.
 The script refuses unexpected SHA changes, validates preserved ancestry, and
-does not delete on its default invocation. **No branch is reported as deleted
+does not delete on its default invocation. Run it with `python scripts/prune_obsolete_research_branches.py` for dry-run and `python scripts/prune_obsolete_research_branches.py --delete` for interactive, authenticated deletion. **No branch is reported as deleted
 until remote Git refs are checked afterward.**
 
 ## Validity / baseline ledger for the paper
