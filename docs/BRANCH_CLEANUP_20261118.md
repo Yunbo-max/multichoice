@@ -1,4 +1,6 @@
-> **Cleanup actions completed (2026-11-18):** PRs #1–#8 were commented and **closed without merge**; PRs [#9](https://github.com/Yunbo-max/multichoice/pull/9) and [#10](https://github.com/Yunbo-max/multichoice/pull/10) now both target `main`. GitHub verification: **2 open PRs, 13 branches**. The nine obsolete branch REFS **have NOT been deleted** because the available GitHub connector exposes create/move-ref but no delete-ref action. This is deliberately not reported as a completed remote branch cleanup. [Exact SHA-audited pruning script](../scripts/prune_obsolete_research_branches.py) is available for an authenticated clone. Run its dry-run first. After explicit deletion via the script or GitHub UI, verify 4 remaining remote branches.
+> **Further consolidation (2026-11-18):** The RoMQA preparation branch was **merged into** the retained `research/static-setjev-paper-20261027` branch using a two-parent merge commit [`236daacd`](https://github.com/Yunbo-max/multichoice/commit/236daacddb2d26fbf5f945b122d1390a32d4df22); all Paper 1 code and commit history now live on **one canonical Paper 1 branch**. The former RoMQA ref is now a tenth deletion candidate. The final target is **3 branches** (`main`, canonical Paper 1, latest Paper 2), not 4. PR #9 now follows the merged canonical branch. Nothing was force-pushed or cherry-picked; no real RoMQA results are claimed. 
+
+> **Cleanup actions completed (2026-11-18):** PRs #1–#8 were commented and **closed without merge**; PRs [#9](https://github.com/Yunbo-max/multichoice/pull/9) and [#10](https://github.com/Yunbo-max/multichoice/pull/10) now both target `main`. GitHub verification: **2 open PRs, 13 branches**. The ten obsolete branch REFS **have NOT been deleted** because the available GitHub connector exposes create/move-ref but no delete-ref action. This is deliberately not reported as a completed remote branch cleanup. [Exact SHA-audited pruning script](../scripts/prune_obsolete_research_branches.py) is available for an authenticated clone. Run its dry-run first. After explicit deletion via the script or GitHub UI, verify 3 remaining remote branches.
 
 # multichoice branch cleanup — audited 2026-11-18
 
@@ -17,23 +19,23 @@ retained research leaf** (GitHub status `ahead`, `behind=0`). The latest
 leaf retains all past code and commit ancestry even after old ref deletion.
 Default `main` is retained. No research content is force-rewritten.
 
-## Keep these four refs
+## Keep these three refs
 
 | Branch | Role | Scientific status |
 | --- | --- | --- |
 | `main` | Stable default and repository entrypoint | Historical code, not the latest research experiments |
-| `research/static-setjev-paper-20261027` | Paper 1 core: CMB/MultiRC, controlled I/C/R, EUR-LEX | Mix of genuine positive/negative results; see validity ledger below |
-| `research/romqa-anchor-icml2027-20261114` | Paper 1 latest preparation: RoMQA converter, matched count-head controls, offline CI | **RoMQA actual data blocked, no real RoMQA training/result** |
+| `research/static-setjev-paper-20261027` | **Single canonical Paper 1 branch**, full Count Anchor / CMB/MultiRC / controlled I/C/R / EUR-LEX **plus the RoMQA preparation code, exact frozen controls and offline CI** | RoMQA real data blocked; only audited prior results can support paper claims |
 | `research/episodic-tree-sokoban-20261027` | Separate Paper 2 latest branch | Earlier episodic experiments contain failures; incomplete visual DEV checks; do not present as positive Paper 1 baseline |
 
-## Delete only these nine intermediate branch pointers
+## Delete only these ten superseded branch pointers
 
 All are exact ancestors of the named leaf; the table's SHA is the audited
 remote head for a **force-free lease/snapshot check** before deletion.
 
 | Proposed removal | Audited SHA | Retained descendant | Rationale |
 | --- | --- | --- | --- |
-| `codex/multiteacher-set-distillation` | `c77214b5c930140f4767cffea6deee83cf2f842f` | Paper 1 latest (and static) | Old self-teacher/soft-label pilots (truncated or overselecting) cannot serve as strong baselines |
+| `codex/multiteacher-set-distillation` | `c77214b5c930140f4767cffea6deee83cf2f842f` | Paper 1 canonical | Old self-teacher/soft-label pilots (truncated or overselecting) cannot serve as strong baselines |
+| `research/romqa-anchor-icml2027-20261114` | `d6fd50a99b8f03cb84fd9e617d0356512ba19244` | **Paper 1 canonical** | Former separate RoMQA preparation branch; both commit lineages are now preserved in the canonical Paper 1 merge commit `236daacddb2d26fbf5f945b122d1390a32d4df22` |
 | `research/recurrent-set-decision-20261024` | `07d152b12018e3cc92deea577e80e18af255c82c` | Paper 2 latest | Initial recurrent revision experiment, later discovered loss/metric faults |
 | `research/recurrent-set-debug-20261024` | `735bc69b83414e12ba80407d2ddd0865a17ca2f2` | Paper 2 latest | Intermediate bug fixes incorporated downstream |
 | `research/episodic-set-memory-20261024` | `823ec93ca6ed3366a7f2ab71ec125031e7a80a3a` | Paper 2 latest | Initial persistent-memory formulation, unverified Qwen benefit |
@@ -77,16 +79,20 @@ constraint-varying positive evidence still needs an accessible and audited
 benchmark. Do not claim that RoMQA is available or that alternate dataset
 results have been obtained.
 
-The current plan is in
-`docs/paper1_romqa_icml2027_protocol_20261114.md` on the latest Paper 1
-branch, while core results live on the stable static Paper 1 branch.
+Both the validated core results and the RoMQA preparation/ICML runbook now live
+on **one canonical Paper 1 branch**:
+`research/static-setjev-paper-20261027`.
+The consolidation is a true two-parent commit `236daacddb2d26fbf5f945b122d1390a32d4df22`,
+with the original static and the former RoMQA tip as parents. The
+`docs/paper1_romqa_icml2027_protocol_20261114.md` runbook remains available
+under that same branch.
 
 ## PRs are not the same as branch refs
 
 The old PR stack used ten PRs chained through ancestor branches.
 For clarity, obsolete PR conversations can be **closed without merging**
 and are still available for provenance. This does not itself delete a
-branch; the nine Git ref deletions require GitHub's branch-delete UI,
+branch; the ten Git ref deletions require GitHub's branch-delete UI,
 an authenticated CLI, or another authorized delete-ref action.
 Retain only Paper 1 / Paper 2 active review PRs and point their bases
 at `main` so no live PR depends on a deleted intermediate base.
