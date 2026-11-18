@@ -1,3 +1,5 @@
+> **Evidence integrity check (2026-11-18):** The early K=16/32/64 synthetic Anchor improvement is **NOT a valid ICML headline or comparable baseline result** until the public workload/pressure cue, fixed-cardinality conditional sampler, and matched budgets are corrected and rerun. A zero-initialized independent Count Head is **not** the strongest baseline; EUR-LEX TRAIN-prior Independent Count outperformed zero-init Anchor in proper Count NLL (1.98 versus 2.10). Controlled-C K=8 is a synthetic mechanism result, Controlled-R pair learning failed, and CMB/MultiRC Test is a near-tie. RoMQA's original ZIP is unavailable (404); no real RoMQA experimental gains exist. These failed/provisional numbers cannot by themselves establish a research gap. See [the branch/evidence ledger](https://github.com/Yunbo-max/multichoice/blob/main/docs/BRANCH_CLEANUP_20261118.md).
+
 > **Scope update, 2026-11-01:** New Paper 1 main experiment is **EUR-LEX only**. [Locked single-benchmark protocol](paper1_eurlex_only_main_experiment.md). Any RoMQA, ECtHR, SATA or other benchmark in this document is historical/planned, not part of the currently approved run. Prior E0–E4 experiments remain historical results; no additional GPU jobs are implied.
 
 # Beyond Independent Choices: When Do Decision Models Need Structured Set Prediction?
@@ -55,7 +57,7 @@ monotonically with the candidate count:
 | 32 | 1.229 | 2.483 | −1.25 |
 | 64 | 2.351 | 4.477 | **−2.13** |
 
-This is the central positive result: **cardinality modeling pays off more as the
+This is a **preliminary, generator-audit-blocked trend**, not paper-ready evidence: cardinality modeling appeared to pay off more as the
 decision set grows**, because the independent-sigmoid Poisson-binomial law drifts
 further from the true count distribution while the anchored count head tracks it.
 The O(K²) log-partition DP (`paper_static/controlled_c_large.py`) makes K=255
