@@ -2,7 +2,7 @@ name: Paper 1 RoMQA schema, frozen-count and DEV offline checks
 on:
   push:
     branches:
-      - research/romqa-anchor-icml2027-20261114
+      - research/static-setjev-paper-20261027
     paths:
       - paper_static/romqa_*.py
       - tests/test_paper1_romqa_*.py
