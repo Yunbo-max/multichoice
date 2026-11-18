@@ -7,9 +7,8 @@ No verified RoMQA archive has been materialized locally, no full-data
 Train/DEV audit, no trained RoMQA BCE model, no RoMQA Anchor experiment,
 no RoMQA positive-result claim, and no blind Test inference/submission.
 
-**Research branch:** research/romqa-anchor-icml2027-20261114
-Parent/previous evidence: research/static-setjev-paper-20261027.
-Do not merge changes into EUR-LEX pilot until comparable validation exists.
+**Single canonical Paper 1 branch (after 2026-11-18 merge):** research/static-setjev-paper-20261027.
+RoMQA preparation code was consolidated through two-parent merge `236daacddb2d26fbf5f945b122d1390a32d4df22`; the older RoMQA branch pointer is redundant. Code integration does not imply RoMQA experimental validation or replace existing EUR-LEX pilot results.
 No coding/Battery/SWE-rebench data is mixed into this paper experiment.
 
 ## 1. Scientific question
