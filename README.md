@@ -1,5 +1,7 @@
 # Multi-answer decision model (multichoice)
 
+> **ICML 2027 Paper 1: Motivation & Introduction (21 November 2026).** Read the [new evidence-grounded manuscript draft](docs/paper1_motivation_introduction_icml2027_20261121.md) for the fast-decision → variable-size sets → conditional-independence → global-cardinality motivation, the proposed English Introduction, equations, application scope, and claim/evidence ledger. **The current findings are mixed:** Controlled-C supports a narrow mechanism, but CMB/MultiRC are near-tied and a TRAIN-prior learned count head wins on the EUR-LEX pilot. The paper does not claim an expressivity advantage over a sufficiently flexible independent-count head or validated Coding/Evidence/Tool Routing gains.
+
 Code, data splits and result files for a **multi-answer (multi-select) decision
 model** built on Qwen3.5-4B. The readout follows the SII / InnerJev decision
 recipe (answer-slot last-token readout over the 255 single-token option labels),
